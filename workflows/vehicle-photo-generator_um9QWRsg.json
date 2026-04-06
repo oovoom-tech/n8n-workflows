@@ -588,12 +588,13 @@
     "availableInMCP": false,
     "binaryMode": "separate",
     "errorWorkflow": "RENqqrrByitDDLeg",
-    "saveDataErrorExecution": "all"
+    "saveDataErrorExecution": "all",
+    "timezone": "Europe/Paris"
   },
   "meta": null,
   "pinData": {},
   "activeVersionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
-  "versionCounter": 114,
+  "versionCounter": 117,
   "shared": [
     {
       "updatedAt": "2026-04-06T09:39:58.112Z",
@@ -1229,6 +1230,22 @@
       {
         "createdAt": "2026-04-06T16:42:17.180Z",
         "id": 95,
+        "workflowId": "um9QWRsgXjJV3h61",
+        "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+        "event": "activated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      },
+      {
+        "createdAt": "2026-04-06T16:54:53.993Z",
+        "id": 108,
+        "workflowId": "um9QWRsgXjJV3h61",
+        "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+        "event": "deactivated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      },
+      {
+        "createdAt": "2026-04-06T16:54:54.008Z",
+        "id": 109,
         "workflowId": "um9QWRsgXjJV3h61",
         "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
         "event": "activated",
