@@ -48,16 +48,49 @@
       }
     },
     {
-      "id": "diff",
-      "name": "Diff Engine",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "get-manifest",
+      "name": "Get Manifest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
       "position": [
         500,
         300
       ],
       "parameters": {
-        "jsCode": "function slugify(name) {\n  return name.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');\n}\nvar workflows = $input.all().map(function(i) { return i.json; });\nvar staticData = $getWorkflowStaticData('global');\nvar manifest = staticData.manifest || {};\nvar actions = [];\nvar seenIds = {};\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  var id = wf.id;\n  seenIds[id] = true;\n  var filename = slugify(wf.name) + '_' + id.slice(0, 8) + '.json';\n  var prev = manifest[id];\n  if (!prev) {\n    actions.push({ action: 'create', id: id, name: wf.name, filename: filename });\n  } else if (prev.name !== wf.name) {\n    actions.push({ action: 'rename', id: id, name: wf.name, filename: filename, oldFilename: prev.filename });\n  } else if (prev.updatedAt !== wf.updatedAt) {\n    actions.push({ action: 'update', id: id, name: wf.name, filename: filename });\n  }\n}\nvar manifestIds = Object.keys(manifest);\nfor (var j = 0; j < manifestIds.length; j++) {\n  var mid = manifestIds[j];\n  if (!seenIds[mid]) {\n    actions.push({ action: 'delete', id: mid, name: manifest[mid].name, filename: manifest[mid].filename });\n  }\n}\nvar newManifest = {};\nfor (var k = 0; k < workflows.length; k++) {\n  var w = workflows[k];\n  var fn = slugify(w.name) + '_' + w.id.slice(0, 8) + '.json';\n  newManifest[w.id] = { filename: fn, name: w.name, updatedAt: w.updatedAt };\n}\nstaticData.pendingManifest = newManifest;\nif (actions.length === 0) return [];\nreturn actions.map(function(a) { return { json: a }; });"
+        "method": "GET",
+        "url": "https://api.github.com/repos/oovoom-tech/n8n-workflows/contents/manifest.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "5lz9es2JW8mFpXHC",
+          "name": "GitHub API (Git Sync)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "diff",
+      "name": "Diff Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ],
+      "parameters": {
+        "jsCode": "function slugify(name) {\n  return name.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');\n}\n\n// Read manifest from GitHub (base64 encoded content)\nvar manifestNode = $('Get Manifest').first().json;\nvar manifest = {};\nif (manifestNode && manifestNode.content) {\n  try {\n    var decoded = Buffer.from(manifestNode.content, 'base64').toString('utf8');\n    manifest = JSON.parse(decoded);\n  } catch(e) { manifest = {}; }\n}\n\nvar workflows = $('List All Workflows').all().map(function(i) { return i.json; });\nvar actions = [];\nvar seenIds = {};\n\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  var id = wf.id;\n  seenIds[id] = true;\n  var filename = slugify(wf.name) + '_' + id.slice(0, 8) + '.json';\n  var prev = manifest[id];\n  if (!prev) {\n    actions.push({ action: 'create', id: id, name: wf.name, filename: filename });\n  } else if (prev.name !== wf.name) {\n    actions.push({ action: 'rename', id: id, name: wf.name, filename: filename, oldFilename: prev.filename });\n  } else if (prev.updatedAt !== wf.updatedAt) {\n    actions.push({ action: 'update', id: id, name: wf.name, filename: filename });\n  }\n}\n\nvar manifestIds = Object.keys(manifest);\nfor (var j = 0; j < manifestIds.length; j++) {\n  var mid = manifestIds[j];\n  if (!seenIds[mid]) {\n    actions.push({ action: 'delete', id: mid, name: manifest[mid].name, filename: manifest[mid].filename });\n  }\n}\n\n// Build new manifest for commit\nvar newManifest = {};\nfor (var k = 0; k < workflows.length; k++) {\n  var w = workflows[k];\n  var fn = slugify(w.name) + '_' + w.id.slice(0, 8) + '.json';\n  newManifest[w.id] = { filename: fn, name: w.name, updatedAt: w.updatedAt };\n}\n\n// Store newManifest for Prepare Git Data node\nvar staticData = $getWorkflowStaticData('global');\nstaticData.pendingManifest = newManifest;\nstaticData.oldManifest = manifest;\n\nif (actions.length === 0) return [];\nreturn actions.map(function(a) { return { json: a }; });"
       }
     },
     {
@@ -66,7 +99,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        750,
+        1000,
         300
       ],
       "parameters": {
@@ -99,7 +132,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1000,
+        1250,
         450
       ],
       "parameters": {}
@@ -110,7 +143,7 @@
       "type": "n8n-nodes-base.n8n",
       "typeVersion": 1,
       "position": [
-        1000,
+        1250,
         200
       ],
       "parameters": {
@@ -135,11 +168,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1250,
+        1500,
         200
       ],
       "parameters": {
-        "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\n// Build commit title\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\n// Build commit body with details\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nvar commitMessage = title + '\\n' + body;\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: commitMessage, stats: stats } }];"
+        "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.oldManifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: title + '\\n' + body, stats: stats } }];"
       }
     },
     {
@@ -148,7 +181,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1500,
+        1750,
         200
       ],
       "parameters": {
@@ -183,7 +216,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1750,
+        2000,
         200
       ],
       "parameters": {
@@ -218,7 +251,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2000,
+        2250,
         200
       ],
       "parameters": {
@@ -256,7 +289,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2250,
+        2500,
         200
       ],
       "parameters": {
@@ -294,7 +327,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2500,
+        2750,
         200
       ],
       "parameters": {
@@ -325,19 +358,6 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000
-    },
-    {
-      "id": "persist",
-      "name": "Persist Manifest",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2750,
-        200
-      ],
-      "parameters": {
-        "jsCode": "var staticData = $getWorkflowStaticData('global');\nstaticData.manifest = staticData.pendingManifest;\ndelete staticData.pendingManifest;\nvar commitSha = $('Create Commit').first().json.sha;\nvar message = $('Prepare Git Data').first().json.commitMessage;\nreturn [{ json: { status: 'success', commit: commitSha.slice(0, 7), message: message } }];"
-      }
     },
     {
       "id": "err-trigger",
@@ -389,6 +409,17 @@
       ]
     },
     "List All Workflows": {
+      "main": [
+        [
+          {
+            "node": "Get Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Manifest": {
       "main": [
         [
           {
@@ -494,17 +525,6 @@
         ]
       ]
     },
-    "Update Ref": {
-      "main": [
-        [
-          {
-            "node": "Persist Manifest",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "On Error": {
       "main": [
         [
@@ -527,8 +547,8 @@
   },
   "meta": null,
   "pinData": null,
-  "activeVersionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
-  "versionCounter": 23,
+  "activeVersionId": "beb2147b-65b7-4dc6-8e8b-b486ca991c2d",
+  "versionCounter": 26,
   "shared": [
     {
       "updatedAt": "2026-04-06T15:54:50.296Z",
@@ -550,9 +570,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-04-06T16:09:20.443Z",
-    "createdAt": "2026-04-06T16:09:20.443Z",
-    "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
+    "updatedAt": "2026-04-06T16:12:13.609Z",
+    "createdAt": "2026-04-06T16:12:13.609Z",
+    "versionId": "beb2147b-65b7-4dc6-8e8b-b486ca991c2d",
     "workflowId": "3HDB3jDmfakQr1Yp",
     "nodes": [
       {
@@ -598,16 +618,49 @@
         }
       },
       {
-        "id": "diff",
-        "name": "Diff Engine",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
+        "id": "get-manifest",
+        "name": "Get Manifest",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
         "position": [
           500,
           300
         ],
         "parameters": {
-          "jsCode": "function slugify(name) {\n  return name.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');\n}\nvar workflows = $input.all().map(function(i) { return i.json; });\nvar staticData = $getWorkflowStaticData('global');\nvar manifest = staticData.manifest || {};\nvar actions = [];\nvar seenIds = {};\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  var id = wf.id;\n  seenIds[id] = true;\n  var filename = slugify(wf.name) + '_' + id.slice(0, 8) + '.json';\n  var prev = manifest[id];\n  if (!prev) {\n    actions.push({ action: 'create', id: id, name: wf.name, filename: filename });\n  } else if (prev.name !== wf.name) {\n    actions.push({ action: 'rename', id: id, name: wf.name, filename: filename, oldFilename: prev.filename });\n  } else if (prev.updatedAt !== wf.updatedAt) {\n    actions.push({ action: 'update', id: id, name: wf.name, filename: filename });\n  }\n}\nvar manifestIds = Object.keys(manifest);\nfor (var j = 0; j < manifestIds.length; j++) {\n  var mid = manifestIds[j];\n  if (!seenIds[mid]) {\n    actions.push({ action: 'delete', id: mid, name: manifest[mid].name, filename: manifest[mid].filename });\n  }\n}\nvar newManifest = {};\nfor (var k = 0; k < workflows.length; k++) {\n  var w = workflows[k];\n  var fn = slugify(w.name) + '_' + w.id.slice(0, 8) + '.json';\n  newManifest[w.id] = { filename: fn, name: w.name, updatedAt: w.updatedAt };\n}\nstaticData.pendingManifest = newManifest;\nif (actions.length === 0) return [];\nreturn actions.map(function(a) { return { json: a }; });"
+          "method": "GET",
+          "url": "https://api.github.com/repos/oovoom-tech/n8n-workflows/contents/manifest.json",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/vnd.github+json"
+              }
+            ]
+          },
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {}
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "5lz9es2JW8mFpXHC",
+            "name": "GitHub API (Git Sync)"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "diff",
+        "name": "Diff Engine",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          750,
+          300
+        ],
+        "parameters": {
+          "jsCode": "function slugify(name) {\n  return name.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');\n}\n\n// Read manifest from GitHub (base64 encoded content)\nvar manifestNode = $('Get Manifest').first().json;\nvar manifest = {};\nif (manifestNode && manifestNode.content) {\n  try {\n    var decoded = Buffer.from(manifestNode.content, 'base64').toString('utf8');\n    manifest = JSON.parse(decoded);\n  } catch(e) { manifest = {}; }\n}\n\nvar workflows = $('List All Workflows').all().map(function(i) { return i.json; });\nvar actions = [];\nvar seenIds = {};\n\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  var id = wf.id;\n  seenIds[id] = true;\n  var filename = slugify(wf.name) + '_' + id.slice(0, 8) + '.json';\n  var prev = manifest[id];\n  if (!prev) {\n    actions.push({ action: 'create', id: id, name: wf.name, filename: filename });\n  } else if (prev.name !== wf.name) {\n    actions.push({ action: 'rename', id: id, name: wf.name, filename: filename, oldFilename: prev.filename });\n  } else if (prev.updatedAt !== wf.updatedAt) {\n    actions.push({ action: 'update', id: id, name: wf.name, filename: filename });\n  }\n}\n\nvar manifestIds = Object.keys(manifest);\nfor (var j = 0; j < manifestIds.length; j++) {\n  var mid = manifestIds[j];\n  if (!seenIds[mid]) {\n    actions.push({ action: 'delete', id: mid, name: manifest[mid].name, filename: manifest[mid].filename });\n  }\n}\n\n// Build new manifest for commit\nvar newManifest = {};\nfor (var k = 0; k < workflows.length; k++) {\n  var w = workflows[k];\n  var fn = slugify(w.name) + '_' + w.id.slice(0, 8) + '.json';\n  newManifest[w.id] = { filename: fn, name: w.name, updatedAt: w.updatedAt };\n}\n\n// Store newManifest for Prepare Git Data node\nvar staticData = $getWorkflowStaticData('global');\nstaticData.pendingManifest = newManifest;\nstaticData.oldManifest = manifest;\n\nif (actions.length === 0) return [];\nreturn actions.map(function(a) { return { json: a }; });"
         }
       },
       {
@@ -616,7 +669,7 @@
         "type": "n8n-nodes-base.if",
         "typeVersion": 2.3,
         "position": [
-          750,
+          1000,
           300
         ],
         "parameters": {
@@ -649,7 +702,7 @@
         "type": "n8n-nodes-base.noOp",
         "typeVersion": 1,
         "position": [
-          1000,
+          1250,
           450
         ],
         "parameters": {}
@@ -660,7 +713,7 @@
         "type": "n8n-nodes-base.n8n",
         "typeVersion": 1,
         "position": [
-          1000,
+          1250,
           200
         ],
         "parameters": {
@@ -685,11 +738,11 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          1250,
+          1500,
           200
         ],
         "parameters": {
-          "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\n// Build commit title\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\n// Build commit body with details\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nvar commitMessage = title + '\\n' + body;\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: commitMessage, stats: stats } }];"
+          "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.oldManifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: title + '\\n' + body, stats: stats } }];"
         }
       },
       {
@@ -698,7 +751,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          1500,
+          1750,
           200
         ],
         "parameters": {
@@ -733,7 +786,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          1750,
+          2000,
           200
         ],
         "parameters": {
@@ -768,7 +821,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          2000,
+          2250,
           200
         ],
         "parameters": {
@@ -806,7 +859,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          2250,
+          2500,
           200
         ],
         "parameters": {
@@ -844,7 +897,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.4,
         "position": [
-          2500,
+          2750,
           200
         ],
         "parameters": {
@@ -875,19 +928,6 @@
         "retryOnFail": true,
         "maxTries": 3,
         "waitBetweenTries": 2000
-      },
-      {
-        "id": "persist",
-        "name": "Persist Manifest",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          2750,
-          200
-        ],
-        "parameters": {
-          "jsCode": "var staticData = $getWorkflowStaticData('global');\nstaticData.manifest = staticData.pendingManifest;\ndelete staticData.pendingManifest;\nvar commitSha = $('Create Commit').first().json.sha;\nvar message = $('Prepare Git Data').first().json.commitMessage;\nreturn [{ json: { status: 'success', commit: commitSha.slice(0, 7), message: message } }];"
-        }
       },
       {
         "id": "err-trigger",
@@ -939,6 +979,17 @@
         ]
       },
       "List All Workflows": {
+        "main": [
+          [
+            {
+              "node": "Get Manifest",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Manifest": {
         "main": [
           [
             {
@@ -1044,17 +1095,6 @@
           ]
         ]
       },
-      "Update Ref": {
-        "main": [
-          [
-            {
-              "node": "Persist Manifest",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
       "On Error": {
         "main": [
           [
@@ -1073,18 +1113,18 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-04-06T16:09:20.473Z",
-        "id": 85,
+        "createdAt": "2026-04-06T16:12:13.658Z",
+        "id": 87,
         "workflowId": "3HDB3jDmfakQr1Yp",
-        "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
+        "versionId": "beb2147b-65b7-4dc6-8e8b-b486ca991c2d",
         "event": "deactivated",
         "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
       },
       {
-        "createdAt": "2026-04-06T16:09:20.495Z",
-        "id": 86,
+        "createdAt": "2026-04-06T16:12:13.676Z",
+        "id": 88,
         "workflowId": "3HDB3jDmfakQr1Yp",
-        "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
+        "versionId": "beb2147b-65b7-4dc6-8e8b-b486ca991c2d",
         "event": "activated",
         "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
       }
