@@ -1,0 +1,1221 @@
+{
+  "id": "um9QWRsgXjJV3h61",
+  "name": "Vehicle Photo Generator",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vehicle-photo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -112
+      ],
+      "webhookId": "020887bc-790b-4bbd-89d3-1bbce42a8dea"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst plaque = (input.body?.license_plate || input.license_plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');\nconst vehicle_id = input.body?.vehicle_id || input.vehicle_id;\nconst callback_url = input.body?.callback_url || input.callback_url;\nreturn [{ json: { plaque, vehicle_id, callback_url, s3_prefix: `plaques/${plaque}` } }];"
+      },
+      "id": "normalize-1",
+      "name": "Normalize Plaque",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "HEAD",
+        "url": "=https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/{{ $json.s3_prefix }}/photo.webp",
+        "options": {}
+      },
+      "id": "s3-check-1",
+      "name": "S3 Check Cache",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        448,
+        -112
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalize = $('Normalize Plaque').first().json;\nconst item = $input.first().json;\nconst hasCache = !item.error;\nreturn [{ json: { ...normalize, hasCache, image_url: hasCache ? `https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/${normalize.s3_prefix}/photo.webp` : null } }];"
+      },
+      "id": "check-cache-1",
+      "name": "Check Cache Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasCache }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-cache-1",
+      "name": "Cache Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        896,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ vehicle_id: $json.vehicle_id, image_url: $json.image_url, status: 'success', cache: true }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-hit-1",
+      "name": "Respond Cache Hit",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, image_url: $('Check Cache Result').first().json.image_url, status: 'success' }) }}",
+        "options": {}
+      },
+      "id": "callback-cache-hit",
+      "name": "Callback Cache Hit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1344,
+        -208
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ziI7v9BiJ18XERfE",
+          "name": "Vehicle Photo Callback Secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ accepted: true }) }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "respond-202-1",
+      "name": "Respond 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.regcheck.org.uk/api/reg.asmx/CheckFrance?RegistrationNumber={{ $('Normalize Plaque').first().json.plaque }}&username=30mille",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "regcheck-1",
+      "name": "RegCheck API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1344,
+        -16
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const xml = $input.first().json.data;\nif (!xml) throw new Error('RegCheck: empty response');\nconst match = xml.match(/<vehicleJson>([\\s\\S]*?)<\\/vehicleJson>/);\nif (!match || !match[1]) throw new Error('RegCheck: vehicleJson not found');\nconst vehicle = JSON.parse(match[1]);\nconst ext = vehicle.ExtendedData || {};\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: {\n  ...normalize,\n  marque: vehicle.CarMake?.CurrentTextValue || ext.marque || '',\n  modele: vehicle.CarModel?.CurrentTextValue || ext.modele || '',\n  annee: vehicle.RegistrationYear || ext.anneeSortie || '',\n  couleur: ext.couleur || ''\n}}];"
+      },
+      "id": "parse-regcheck-1",
+      "name": "Parse RegCheck",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        56
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst color = d.couleur || 'orange';\n\nconst prompt = [\n  `${d.annee} ${d.marque} ${d.modele} in ${color}`,\n  '3/4 front view',\n  'professional automotive studio photography',\n  'pure white seamless background',\n  'soft natural lighting',\n  'blank white license plate with no text, no numbers, no characters',\n  'photorealistic, high detail, 8k'\n].join(', ');\n\nreturn [{ json: { ...d, image_prompt: prompt } }];"
+      },
+      "id": "build-prompt-1",
+      "name": "Build Image Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        56
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItem = $input.first();\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: { s3_prefix: normalize.s3_prefix }, binary: inputItem.binary }];"
+      },
+      "id": "prepare-original-1",
+      "name": "Prepare Original Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        8
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "fiche-auto-cache",
+        "fileName": "={{ $json.s3_prefix }}/photo_original.webp",
+        "additionalFields": {}
+      },
+      "id": "s3-upload-original",
+      "name": "S3 Upload Original",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        8
+      ],
+      "credentials": {
+        "aws": {
+          "id": "avxR0VFqsBXPQ02d",
+          "name": "IAM user for S3 fiche-auto access"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1024,
+        "height": 682,
+        "resizeOption": "ignoreAspectRatio",
+        "options": {
+          "format": "webp"
+        }
+      },
+      "id": "resize-image-1",
+      "name": "Resize Image",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItem = $input.first();\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: { s3_prefix: normalize.s3_prefix, vehicle_id: normalize.vehicle_id, callback_url: normalize.callback_url }, binary: inputItem.binary }];"
+      },
+      "id": "prepare-optimized-1",
+      "name": "Prepare Optimized Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "fiche-auto-cache",
+        "fileName": "={{ $json.s3_prefix }}/photo.webp",
+        "additionalFields": {}
+      },
+      "id": "s3-upload-optimized",
+      "name": "S3 Upload Optimized",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        200
+      ],
+      "credentials": {
+        "aws": {
+          "id": "avxR0VFqsBXPQ02d",
+          "name": "IAM user for S3 fiche-auto access"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, image_url: 'https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/' + $('Normalize Plaque').first().json.s3_prefix + '/photo.webp', status: 'success' }) }}",
+        "options": {}
+      },
+      "id": "callback-success-1",
+      "name": "Callback Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3136,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ziI7v9BiJ18XERfE",
+          "name": "Vehicle Photo Callback Secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, status: 'error', error: ($json.errorMessage || ($json.error && $json.error.message) || 'Generation failed') }) }}",
+        "options": {}
+      },
+      "id": "callback-error-1",
+      "name": "Callback Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2240,
+        -112
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ziI7v9BiJ18XERfE",
+          "name": "Vehicle Photo Callback Secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/images/generations",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-image-1', prompt: $json.image_prompt, size: '1536x1024', quality: 'medium', output_format: 'webp' }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "generate-image-http",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2016,
+        56
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "XEH6UnHPZLlWjfRN",
+          "name": "OpenAi account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst b64 = response.data[0].b64_json;\nconst normalize = $('Normalize Plaque').first().json;\nconst buffer = Buffer.from(b64, 'base64');\nreturn [{\n  json: { s3_prefix: normalize.s3_prefix, vehicle_id: normalize.vehicle_id, callback_url: normalize.callback_url },\n  binary: { data: await this.helpers.prepareBinaryData(buffer, 'photo.webp', 'image/webp') }\n}];"
+      },
+      "id": "extract-binary-1",
+      "name": "Extract Image Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        104
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Plaque",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Plaque": {
+      "main": [
+        [
+          {
+            "node": "S3 Check Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Check Cache": {
+      "main": [
+        [
+          {
+            "node": "Check Cache Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cache Result": {
+      "main": [
+        [
+          {
+            "node": "Cache Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Exists?": {
+      "main": [
+        [
+          {
+            "node": "Respond Cache Hit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 202",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Cache Hit": {
+      "main": [
+        [
+          {
+            "node": "Callback Cache Hit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 202": {
+      "main": [
+        [
+          {
+            "node": "RegCheck API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RegCheck API": {
+      "main": [
+        [
+          {
+            "node": "Parse RegCheck",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse RegCheck": {
+      "main": [
+        [
+          {
+            "node": "Build Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Original Upload": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload Original",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resize Image": {
+      "main": [
+        [
+          {
+            "node": "Prepare Optimized Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Optimized Upload": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload Optimized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Upload Optimized": {
+      "main": [
+        [
+          {
+            "node": "Callback Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Callback Error",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Image Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Image Binary": {
+      "main": [
+        [
+          {
+            "node": "Prepare Original Upload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resize Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "meta": null,
+  "pinData": {},
+  "activeVersionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+  "versionCounter": 111,
+  "shared": [
+    {
+      "updatedAt": "2026-04-06T09:39:58.112Z",
+      "createdAt": "2026-04-06T09:39:58.112Z",
+      "role": "workflow:owner",
+      "workflowId": "um9QWRsgXjJV3h61",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-06T14:47:21.289Z",
+    "createdAt": "2026-04-06T14:47:21.289Z",
+    "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+    "workflowId": "um9QWRsgXjJV3h61",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "vehicle-photo",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "webhook-1",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          -112
+        ],
+        "webhookId": "020887bc-790b-4bbd-89d3-1bbce42a8dea"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst plaque = (input.body?.license_plate || input.license_plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');\nconst vehicle_id = input.body?.vehicle_id || input.vehicle_id;\nconst callback_url = input.body?.callback_url || input.callback_url;\nreturn [{ json: { plaque, vehicle_id, callback_url, s3_prefix: `plaques/${plaque}` } }];"
+        },
+        "id": "normalize-1",
+        "name": "Normalize Plaque",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          -112
+        ]
+      },
+      {
+        "parameters": {
+          "method": "HEAD",
+          "url": "=https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/{{ $json.s3_prefix }}/photo.webp",
+          "options": {}
+        },
+        "id": "s3-check-1",
+        "name": "S3 Check Cache",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          448,
+          -112
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const normalize = $('Normalize Plaque').first().json;\nconst item = $input.first().json;\nconst hasCache = !item.error;\nreturn [{ json: { ...normalize, hasCache, image_url: hasCache ? `https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/${normalize.s3_prefix}/photo.webp` : null } }];"
+        },
+        "id": "check-cache-1",
+        "name": "Check Cache Result",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          672,
+          -112
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.hasCache }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "id": "if-cache-1",
+        "name": "Cache Exists?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          896,
+          -112
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ vehicle_id: $json.vehicle_id, image_url: $json.image_url, status: 'success', cache: true }) }}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "id": "respond-hit-1",
+        "name": "Respond Cache Hit",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1120,
+          -208
+        ]
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "httpHeaderAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, image_url: $('Check Cache Result').first().json.image_url, status: 'success' }) }}",
+          "options": {}
+        },
+        "id": "callback-cache-hit",
+        "name": "Callback Cache Hit",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1344,
+          -208
+        ],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "ziI7v9BiJ18XERfE",
+            "name": "Vehicle Photo Callback Secret"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ accepted: true }) }}",
+          "options": {
+            "responseCode": 202
+          }
+        },
+        "id": "respond-202-1",
+        "name": "Respond 202",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1120,
+          -16
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=https://www.regcheck.org.uk/api/reg.asmx/CheckFrance?RegistrationNumber={{ $('Normalize Plaque').first().json.plaque }}&username=30mille",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "regcheck-1",
+        "name": "RegCheck API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1344,
+          -16
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const xml = $input.first().json.data;\nif (!xml) throw new Error('RegCheck: empty response');\nconst match = xml.match(/<vehicleJson>([\\s\\S]*?)<\\/vehicleJson>/);\nif (!match || !match[1]) throw new Error('RegCheck: vehicleJson not found');\nconst vehicle = JSON.parse(match[1]);\nconst ext = vehicle.ExtendedData || {};\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: {\n  ...normalize,\n  marque: vehicle.CarMake?.CurrentTextValue || ext.marque || '',\n  modele: vehicle.CarModel?.CurrentTextValue || ext.modele || '',\n  annee: vehicle.RegistrationYear || ext.anneeSortie || '',\n  couleur: ext.couleur || ''\n}}];"
+        },
+        "id": "parse-regcheck-1",
+        "name": "Parse RegCheck",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1568,
+          56
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const d = $input.first().json;\nconst color = d.couleur || 'orange';\n\nconst prompt = [\n  `${d.annee} ${d.marque} ${d.modele} in ${color}`,\n  '3/4 front view',\n  'professional automotive studio photography',\n  'pure white seamless background',\n  'soft natural lighting',\n  'blank white license plate with no text, no numbers, no characters',\n  'photorealistic, high detail, 8k'\n].join(', ');\n\nreturn [{ json: { ...d, image_prompt: prompt } }];"
+        },
+        "id": "build-prompt-1",
+        "name": "Build Image Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1792,
+          56
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const inputItem = $input.first();\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: { s3_prefix: normalize.s3_prefix }, binary: inputItem.binary }];"
+        },
+        "id": "prepare-original-1",
+        "name": "Prepare Original Upload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2464,
+          8
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "upload",
+          "bucketName": "fiche-auto-cache",
+          "fileName": "={{ $json.s3_prefix }}/photo_original.webp",
+          "additionalFields": {}
+        },
+        "id": "s3-upload-original",
+        "name": "S3 Upload Original",
+        "type": "n8n-nodes-base.awsS3",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          8
+        ],
+        "credentials": {
+          "aws": {
+            "id": "avxR0VFqsBXPQ02d",
+            "name": "IAM user for S3 fiche-auto access"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "operation": "resize",
+          "width": 1024,
+          "height": 682,
+          "resizeOption": "ignoreAspectRatio",
+          "options": {
+            "format": "webp"
+          }
+        },
+        "id": "resize-image-1",
+        "name": "Resize Image",
+        "type": "n8n-nodes-base.editImage",
+        "typeVersion": 1,
+        "position": [
+          2464,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const inputItem = $input.first();\nconst normalize = $('Normalize Plaque').first().json;\nreturn [{ json: { s3_prefix: normalize.s3_prefix, vehicle_id: normalize.vehicle_id, callback_url: normalize.callback_url }, binary: inputItem.binary }];"
+        },
+        "id": "prepare-optimized-1",
+        "name": "Prepare Optimized Upload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2688,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "upload",
+          "bucketName": "fiche-auto-cache",
+          "fileName": "={{ $json.s3_prefix }}/photo.webp",
+          "additionalFields": {}
+        },
+        "id": "s3-upload-optimized",
+        "name": "S3 Upload Optimized",
+        "type": "n8n-nodes-base.awsS3",
+        "typeVersion": 2,
+        "position": [
+          2912,
+          200
+        ],
+        "credentials": {
+          "aws": {
+            "id": "avxR0VFqsBXPQ02d",
+            "name": "IAM user for S3 fiche-auto access"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "httpHeaderAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, image_url: 'https://fiche-auto-cache.s3.eu-west-3.amazonaws.com/' + $('Normalize Plaque').first().json.s3_prefix + '/photo.webp', status: 'success' }) }}",
+          "options": {}
+        },
+        "id": "callback-success-1",
+        "name": "Callback Success",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3136,
+          200
+        ],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "ziI7v9BiJ18XERfE",
+            "name": "Vehicle Photo Callback Secret"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $('Normalize Plaque').first().json.callback_url }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "httpHeaderAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ vehicle_id: $('Normalize Plaque').first().json.vehicle_id, status: 'error', error: ($json.errorMessage || ($json.error && $json.error.message) || 'Generation failed') }) }}",
+          "options": {}
+        },
+        "id": "callback-error-1",
+        "name": "Callback Error",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2240,
+          -112
+        ],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "ziI7v9BiJ18XERfE",
+            "name": "Vehicle Photo Callback Secret"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.openai.com/v1/images/generations",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "openAiApi",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: 'gpt-image-1', prompt: $json.image_prompt, size: '1536x1024', quality: 'medium', output_format: 'webp' }) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "generate-image-http",
+        "name": "Generate Image",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2016,
+          56
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "XEH6UnHPZLlWjfRN",
+            "name": "OpenAi account"
+          }
+        },
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const response = $input.first().json;\nconst b64 = response.data[0].b64_json;\nconst normalize = $('Normalize Plaque').first().json;\nconst buffer = Buffer.from(b64, 'base64');\nreturn [{\n  json: { s3_prefix: normalize.s3_prefix, vehicle_id: normalize.vehicle_id, callback_url: normalize.callback_url },\n  binary: { data: await this.helpers.prepareBinaryData(buffer, 'photo.webp', 'image/webp') }\n}];"
+        },
+        "id": "extract-binary-1",
+        "name": "Extract Image Binary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          104
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Normalize Plaque",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Plaque": {
+        "main": [
+          [
+            {
+              "node": "S3 Check Cache",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "S3 Check Cache": {
+        "main": [
+          [
+            {
+              "node": "Check Cache Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Cache Result": {
+        "main": [
+          [
+            {
+              "node": "Cache Exists?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cache Exists?": {
+        "main": [
+          [
+            {
+              "node": "Respond Cache Hit",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond 202",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Respond Cache Hit": {
+        "main": [
+          [
+            {
+              "node": "Callback Cache Hit",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Respond 202": {
+        "main": [
+          [
+            {
+              "node": "RegCheck API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RegCheck API": {
+        "main": [
+          [
+            {
+              "node": "Parse RegCheck",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Callback Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse RegCheck": {
+        "main": [
+          [
+            {
+              "node": "Build Image Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Original Upload": {
+        "main": [
+          [
+            {
+              "node": "S3 Upload Original",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resize Image": {
+        "main": [
+          [
+            {
+              "node": "Prepare Optimized Upload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Optimized Upload": {
+        "main": [
+          [
+            {
+              "node": "S3 Upload Optimized",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "S3 Upload Optimized": {
+        "main": [
+          [
+            {
+              "node": "Callback Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Image Prompt": {
+        "main": [
+          [
+            {
+              "node": "Generate Image",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Image": {
+        "main": [
+          [
+            {
+              "node": "Callback Error",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Extract Image Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Image Binary": {
+        "main": [
+          [
+            {
+              "node": "Prepare Original Upload",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Resize Image",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Yohan Levy",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-06T14:47:21.316Z",
+        "id": 74,
+        "workflowId": "um9QWRsgXjJV3h61",
+        "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+        "event": "deactivated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      },
+      {
+        "createdAt": "2026-04-06T14:47:21.330Z",
+        "id": 75,
+        "workflowId": "um9QWRsgXjJV3h61",
+        "versionId": "1def41ea-3706-40ff-a4ca-db97287be5fc",
+        "event": "activated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    ]
+  }
+}

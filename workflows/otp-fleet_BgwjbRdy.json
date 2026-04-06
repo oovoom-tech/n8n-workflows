@@ -1,0 +1,386 @@
+{
+  "id": "BgwjbRdyKGTluok2",
+  "name": "OTP Fleet",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "OTP",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Email de l'utilisateur",
+              "placeholder": "user@email.com",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Code",
+              "placeholder": "123456"
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "buttonLabel": "Enregistrer",
+          "path": "otp-fleet",
+          "useWorkflowTimezone": true
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2be9b8f5-5efa-4a88-ac7c-b7a8158696ff",
+      "name": "On form submission",
+      "webhookId": "8195db67-12a1-48e3-b27a-649af0f3b619"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE users\nSET otp_code = {{ $json.otp }},\n    code_created_at = UNIX_TIMESTAMP(CURRENT_TIMESTAMP)\nWHERE email = '{{ $json.email }}'\nLIMIT 1",
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        420,
+        0
+      ],
+      "id": "93a550f6-60c8-45a8-847b-80a18c6c431c",
+      "name": "MySQL",
+      "credentials": {
+        "mySql": {
+          "id": "zQwyCsm7yEldMccQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return {\n  email: $json['Email de l\\'utilisateur'].replace(/\\s+/g, '').toLowerCase(),\n  otp: $json.Code || 123456,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "3e02829a-4688-4a13-be5f-ec9822f3c645",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Rapport",
+        "completionMessage": "=Utilisateur modifié : {{ $json.data.affectedRows }}\n\nLien : https://fleet.oovoom.com/\n\nMail : {{ $('Code').item.json.email }}\n\nOTP : {{ $('Code').item.json.otp }}",
+        "options": {
+          "formTitle": ""
+        }
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        640,
+        0
+      ],
+      "id": "6098d8f8-3d40-4abc-81bb-70af7d2a3dc0",
+      "name": "Form",
+      "webhookId": "c9ad4474-a70a-45ef-85ab-c327261cc976"
+    },
+    {
+      "parameters": {
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "value": "U06RU7DMG4Q",
+          "mode": "list",
+          "cachedResultName": "yohan"
+        },
+        "text": "=Demande OTP\n\nUtilisateur modifié : {{ $('MySQL').item.json.data.affectedRows }}\n\nUser : {{ $('Code').item.json.email }}\n\nCode : {{ $('Code').item.json.otp }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        860,
+        0
+      ],
+      "id": "7e1a334c-0fbb-496d-9e99-adde3371616c",
+      "name": "Slack",
+      "webhookId": "3da58a4f-3d8c-493b-80fc-2f606a50c366",
+      "credentials": {
+        "slackApi": {
+          "id": "XbVsH8G9fd7hWHCD",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "activeVersionId": "e537d304-a2fa-49ca-9d39-ef8e60e4be80",
+  "versionCounter": 24,
+  "shared": [
+    {
+      "updatedAt": "2025-03-12T12:54:55.221Z",
+      "createdAt": "2025-03-12T12:54:55.221Z",
+      "role": "workflow:owner",
+      "workflowId": "BgwjbRdyKGTluok2",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2025-12-01T02:32:28.263Z",
+    "createdAt": "2025-12-01T02:32:28.263Z",
+    "versionId": "e537d304-a2fa-49ca-9d39-ef8e60e4be80",
+    "workflowId": "BgwjbRdyKGTluok2",
+    "nodes": [
+      {
+        "parameters": {
+          "formTitle": "OTP",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "Email de l'utilisateur",
+                "placeholder": "user@email.com",
+                "requiredField": true
+              },
+              {
+                "fieldLabel": "Code",
+                "placeholder": "123456"
+              }
+            ]
+          },
+          "responseMode": "lastNode",
+          "options": {
+            "buttonLabel": "Enregistrer",
+            "path": "otp-fleet",
+            "useWorkflowTimezone": true
+          }
+        },
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "2be9b8f5-5efa-4a88-ac7c-b7a8158696ff",
+        "name": "On form submission",
+        "webhookId": "8195db67-12a1-48e3-b27a-649af0f3b619"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE users\nSET otp_code = {{ $json.otp }},\n    code_created_at = UNIX_TIMESTAMP(CURRENT_TIMESTAMP)\nWHERE email = '{{ $json.email }}'\nLIMIT 1",
+          "options": {
+            "detailedOutput": true
+          }
+        },
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          420,
+          0
+        ],
+        "id": "93a550f6-60c8-45a8-847b-80a18c6c431c",
+        "name": "MySQL",
+        "credentials": {
+          "mySql": {
+            "id": "zQwyCsm7yEldMccQ",
+            "name": "MySQL account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "return {\n  email: $json['Email de l\\'utilisateur'].replace(/\\s+/g, '').toLowerCase(),\n  otp: $json.Code || 123456,\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          0
+        ],
+        "id": "3e02829a-4688-4a13-be5f-ec9822f3c645",
+        "name": "Code"
+      },
+      {
+        "parameters": {
+          "operation": "completion",
+          "completionTitle": "Rapport",
+          "completionMessage": "=Utilisateur modifié : {{ $json.data.affectedRows }}\n\nLien : https://fleet.oovoom.com/\n\nMail : {{ $('Code').item.json.email }}\n\nOTP : {{ $('Code').item.json.otp }}",
+          "options": {
+            "formTitle": ""
+          }
+        },
+        "type": "n8n-nodes-base.form",
+        "typeVersion": 1,
+        "position": [
+          640,
+          0
+        ],
+        "id": "6098d8f8-3d40-4abc-81bb-70af7d2a3dc0",
+        "name": "Form",
+        "webhookId": "c9ad4474-a70a-45ef-85ab-c327261cc976"
+      },
+      {
+        "parameters": {
+          "select": "user",
+          "user": {
+            "__rl": true,
+            "value": "U06RU7DMG4Q",
+            "mode": "list",
+            "cachedResultName": "yohan"
+          },
+          "text": "=Demande OTP\n\nUtilisateur modifié : {{ $('MySQL').item.json.data.affectedRows }}\n\nUser : {{ $('Code').item.json.email }}\n\nCode : {{ $('Code').item.json.otp }}",
+          "otherOptions": {}
+        },
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.3,
+        "position": [
+          860,
+          0
+        ],
+        "id": "7e1a334c-0fbb-496d-9e99-adde3371616c",
+        "name": "Slack",
+        "webhookId": "3da58a4f-3d8c-493b-80fc-2f606a50c366",
+        "credentials": {
+          "slackApi": {
+            "id": "XbVsH8G9fd7hWHCD",
+            "name": "Slack account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "On form submission": {
+        "main": [
+          [
+            {
+              "node": "Code",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "MySQL": {
+        "main": [
+          [
+            {
+              "node": "Form",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code": {
+        "main": [
+          [
+            {
+              "node": "MySQL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Form": {
+        "main": [
+          [
+            {
+              "node": "Slack",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "system migration",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2025-03-13T12:29:02.636Z",
+        "id": 4,
+        "workflowId": "BgwjbRdyKGTluok2",
+        "versionId": "e537d304-a2fa-49ca-9d39-ef8e60e4be80",
+        "event": "activated",
+        "userId": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,520 @@
+{
+  "id": "BRZ6Ozmyahf2Daem",
+  "name": "Kilométrage Véhicule",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Kilométrage véhicule",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Plaque d'immatriculation",
+              "placeholder": "AB-123-CD",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Nouveau kilométrage",
+              "fieldType": "number",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "buttonLabel": "Enregistrer",
+          "path": "kilometrage-vehicule",
+          "useWorkflowTimezone": true
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1195cc25-9998-4582-a3df-841af056a681",
+      "name": "On form submission",
+      "webhookId": "8842f13c-257a-4d86-b6bc-1a3ce31bd020"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Add a new field called 'myNewField' to the JSON of the item\n$input.item.json.myNewField = 1;\n\nconst normalized = $json['Plaque d\\'immatriculation'].replace(/[^A-Za-z0-9]/g, '').toUpperCase();\n\nreturn {\n  'license_plate': normalized,\n  'new_mileage':  $json['Nouveau kilométrage']\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "bf579957-b55e-4959-a909-48ec0e68ad33",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Rapport",
+        "completionMessage": "=Véhicule modifié : {{ $json.data.affectedRows }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 1,
+      "position": [
+        740,
+        0
+      ],
+      "id": "57b7cf25-8301-4a60-b024-41b0f9bde262",
+      "name": "Form",
+      "webhookId": "5239907c-f77d-4889-b258-0e19ac544ffe"
+    },
+    {
+      "parameters": {
+        "subject": "=[n8n] Workflow - Kilométrage ({{ $('Code').item.json.license_plate }} - {{ $('Code').item.json.new_mileage }})",
+        "body": "=Date : {{ $('On form submission').item.json.submittedAt }}\n\nImmatriculation : {{ $('Code').item.json.license_plate }}\n\nKilométrage : {{ $('Code').item.json.new_mileage }}\n\nRequête SQL : {{ $('Update Odometer Data').item.json.sql }}\n\nOutput SQL : {{ $('Update Odometer Data').item.json.data.info }}",
+        "fromEmail": "support@weshake.io",
+        "toAddresses": [
+          "yohan@oovoom.fr"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsSes",
+      "typeVersion": 1,
+      "position": [
+        980,
+        0
+      ],
+      "id": "4e6a287a-6d69-4c4a-a995-2b3de85194fe",
+      "name": "AWS SES",
+      "credentials": {
+        "aws": {
+          "id": "XwgBrvh9y8cIm50j",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "user",
+        "user": {
+          "__rl": true,
+          "value": "U06RU7DMG4Q",
+          "mode": "list",
+          "cachedResultName": "yohan"
+        },
+        "text": "=Mise à jour de kilométrage\n\n\nDate : {{ $('On form submission').item.json.submittedAt }}\n\nImmatriculation : {{ $('Code').item.json.license_plate }}\n\nKilométrage : {{ $('Code').item.json.new_mileage }}\n\nRequête SQL : {{ $('Update Odometer Data').item.json.sql }}\n\nOutput SQL : {{ $('Update Odometer Data').item.json.data.info }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "2f4abd62-eded-4bfd-b73d-40044c11957c",
+      "name": "Slack",
+      "webhookId": "1e859164-25c9-4a0a-8b0a-5587d05f4758",
+      "credentials": {
+        "slackApi": {
+          "id": "XbVsH8G9fd7hWHCD",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id \nFROM vehicles \nWHERE\n  UPPER(REGEXP_REPLACE(license_plate, '[^A-Za-z0-9]', '')) = '{{ $json.license_plate }}'\n  AND is_delete = 0\nORDER BY id DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        380,
+        0
+      ],
+      "id": "1d75b1e0-2a00-4889-8a9e-c81167db32c8",
+      "name": "Get Vehicle",
+      "credentials": {
+        "mySql": {
+          "id": "zQwyCsm7yEldMccQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE vehicles\nSET mileage_know_on_the_date = {{ $('Code').item.json.new_mileage }}\nWHERE id = {{ $json.id }}\nLIMIT 1;\n\nUPDATE histories_update_legal_documentary \nSET \n    mileage_know_on_the_date = {{ $('Code').item.json.new_mileage }}\nWHERE vehicle_id = {{ $json.id }}\nORDER BY id DESC \nLIMIT 1;",
+        "options": {
+          "detailedOutput": true
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        540,
+        0
+      ],
+      "id": "1d2eac29-b43e-4ce9-ad45-58d56461534f",
+      "name": "Update Odometer Data",
+      "credentials": {
+        "mySql": {
+          "id": "zQwyCsm7yEldMccQ",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Get Vehicle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form": {
+      "main": [
+        [
+          {
+            "node": "AWS SES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS SES": {
+      "main": [
+        [
+          {
+            "node": "Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Vehicle": {
+      "main": [
+        [
+          {
+            "node": "Update Odometer Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Odometer Data": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "activeVersionId": "2e2af967-3fe4-4b4c-974c-8d4f18ba74fa",
+  "versionCounter": 24,
+  "shared": [
+    {
+      "updatedAt": "2025-03-12T09:33:56.738Z",
+      "createdAt": "2025-03-12T09:33:56.738Z",
+      "role": "workflow:owner",
+      "workflowId": "BRZ6Ozmyahf2Daem",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2025-12-01T02:32:28.263Z",
+    "createdAt": "2025-12-01T02:32:28.263Z",
+    "versionId": "2e2af967-3fe4-4b4c-974c-8d4f18ba74fa",
+    "workflowId": "BRZ6Ozmyahf2Daem",
+    "nodes": [
+      {
+        "parameters": {
+          "formTitle": "Kilométrage véhicule",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "Plaque d'immatriculation",
+                "placeholder": "AB-123-CD",
+                "requiredField": true
+              },
+              {
+                "fieldLabel": "Nouveau kilométrage",
+                "fieldType": "number",
+                "requiredField": true
+              }
+            ]
+          },
+          "responseMode": "lastNode",
+          "options": {
+            "buttonLabel": "Enregistrer",
+            "path": "kilometrage-vehicule",
+            "useWorkflowTimezone": true
+          }
+        },
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "1195cc25-9998-4582-a3df-841af056a681",
+        "name": "On form submission",
+        "webhookId": "8842f13c-257a-4d86-b6bc-1a3ce31bd020"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "// Add a new field called 'myNewField' to the JSON of the item\n$input.item.json.myNewField = 1;\n\nconst normalized = $json['Plaque d\\'immatriculation'].replace(/[^A-Za-z0-9]/g, '').toUpperCase();\n\nreturn {\n  'license_plate': normalized,\n  'new_mileage':  $json['Nouveau kilométrage']\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          0
+        ],
+        "id": "bf579957-b55e-4959-a909-48ec0e68ad33",
+        "name": "Code"
+      },
+      {
+        "parameters": {
+          "operation": "completion",
+          "completionTitle": "Rapport",
+          "completionMessage": "=Véhicule modifié : {{ $json.data.affectedRows }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.form",
+        "typeVersion": 1,
+        "position": [
+          740,
+          0
+        ],
+        "id": "57b7cf25-8301-4a60-b024-41b0f9bde262",
+        "name": "Form",
+        "webhookId": "5239907c-f77d-4889-b258-0e19ac544ffe"
+      },
+      {
+        "parameters": {
+          "subject": "=[n8n] Workflow - Kilométrage ({{ $('Code').item.json.license_plate }} - {{ $('Code').item.json.new_mileage }})",
+          "body": "=Date : {{ $('On form submission').item.json.submittedAt }}\n\nImmatriculation : {{ $('Code').item.json.license_plate }}\n\nKilométrage : {{ $('Code').item.json.new_mileage }}\n\nRequête SQL : {{ $('Update Odometer Data').item.json.sql }}\n\nOutput SQL : {{ $('Update Odometer Data').item.json.data.info }}",
+          "fromEmail": "support@weshake.io",
+          "toAddresses": [
+            "yohan@oovoom.fr"
+          ],
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.awsSes",
+        "typeVersion": 1,
+        "position": [
+          980,
+          0
+        ],
+        "id": "4e6a287a-6d69-4c4a-a995-2b3de85194fe",
+        "name": "AWS SES",
+        "credentials": {
+          "aws": {
+            "id": "XwgBrvh9y8cIm50j",
+            "name": "AWS account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "select": "user",
+          "user": {
+            "__rl": true,
+            "value": "U06RU7DMG4Q",
+            "mode": "list",
+            "cachedResultName": "yohan"
+          },
+          "text": "=Mise à jour de kilométrage\n\n\nDate : {{ $('On form submission').item.json.submittedAt }}\n\nImmatriculation : {{ $('Code').item.json.license_plate }}\n\nKilométrage : {{ $('Code').item.json.new_mileage }}\n\nRequête SQL : {{ $('Update Odometer Data').item.json.sql }}\n\nOutput SQL : {{ $('Update Odometer Data').item.json.data.info }}",
+          "otherOptions": {}
+        },
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.3,
+        "position": [
+          1200,
+          0
+        ],
+        "id": "2f4abd62-eded-4bfd-b73d-40044c11957c",
+        "name": "Slack",
+        "webhookId": "1e859164-25c9-4a0a-8b0a-5587d05f4758",
+        "credentials": {
+          "slackApi": {
+            "id": "XbVsH8G9fd7hWHCD",
+            "name": "Slack account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id \nFROM vehicles \nWHERE\n  UPPER(REGEXP_REPLACE(license_plate, '[^A-Za-z0-9]', '')) = '{{ $json.license_plate }}'\n  AND is_delete = 0\nORDER BY id DESC\nLIMIT 1;",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          380,
+          0
+        ],
+        "id": "1d75b1e0-2a00-4889-8a9e-c81167db32c8",
+        "name": "Get Vehicle",
+        "credentials": {
+          "mySql": {
+            "id": "zQwyCsm7yEldMccQ",
+            "name": "MySQL account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE vehicles\nSET mileage_know_on_the_date = {{ $('Code').item.json.new_mileage }}\nWHERE id = {{ $json.id }}\nLIMIT 1;\n\nUPDATE histories_update_legal_documentary \nSET \n    mileage_know_on_the_date = {{ $('Code').item.json.new_mileage }}\nWHERE vehicle_id = {{ $json.id }}\nORDER BY id DESC \nLIMIT 1;",
+          "options": {
+            "detailedOutput": true
+          }
+        },
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          540,
+          0
+        ],
+        "id": "1d2eac29-b43e-4ce9-ad45-58d56461534f",
+        "name": "Update Odometer Data",
+        "credentials": {
+          "mySql": {
+            "id": "zQwyCsm7yEldMccQ",
+            "name": "MySQL account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "On form submission": {
+        "main": [
+          [
+            {
+              "node": "Code",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code": {
+        "main": [
+          [
+            {
+              "node": "Get Vehicle",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Form": {
+        "main": [
+          [
+            {
+              "node": "AWS SES",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AWS SES": {
+        "main": [
+          [
+            {
+              "node": "Slack",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Vehicle": {
+        "main": [
+          [
+            {
+              "node": "Update Odometer Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Odometer Data": {
+        "main": [
+          [
+            {
+              "node": "Form",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "system migration",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2025-05-30T15:21:26.882Z",
+        "id": 1,
+        "workflowId": "BRZ6Ozmyahf2Daem",
+        "versionId": "2e2af967-3fe4-4b4c-974c-8d4f18ba74fa",
+        "event": "activated",
+        "userId": null
+      }
+    ]
+  }
+}

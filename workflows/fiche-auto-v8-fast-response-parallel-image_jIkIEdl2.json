@@ -1,0 +1,700 @@
+{
+  "id": "jIkIEdl2_UiQV0mddJq5T",
+  "name": "Fiche Auto V8 - Fast Response + Parallel Image",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "fiche-auto",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e353a917-867c-4166-9cf9-e66c64f8cb1f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        11344,
+        8520
+      ],
+      "webhookId": "fiche-auto"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nreturn [{\n  json: {\n    ...input,\n    _config: {\n      S3_BUCKET: 'fiche-auto-cache',\n      S3_REGION: 'eu-west-3',\n      PERPLEXITY_MODEL: 'sonar-pro',\n      LLM_MODEL: 'gpt-4.1-mini',\n      IMAGE_MODEL: 'gpt-image-1'\n    }\n  }\n}];"
+      },
+      "id": "b1f6ca65-8799-4b7c-ad0c-e2e7713e2cda",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11568,
+        8520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst plaque = (input.query?.plaque || input.body?.plaque || '').toUpperCase().replace(/[^A-Z0-9]/g, '');\nreturn [{ json: { plaque, s3_prefix: `plaques/${plaque}` } }];"
+      },
+      "id": "d792410d-5128-4b9d-a3d2-d119cd2bbe27",
+      "name": "Normalize Plaque",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        11792,
+        8520
+      ]
+    },
+    {
+      "parameters": {
+        "bucketName": "={{ $('Config').item.json._config.S3_BUCKET }}",
+        "fileKey": "={{ $('Normalize Plaque').item.json.s3_prefix }}/data.json"
+      },
+      "id": "df3dce54-2a5d-4150-94e2-48603b048209",
+      "name": "S3 Read Cache",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        12016,
+        8520
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "aws": {
+          "id": "avxR0VFqsBXPQ02d",
+          "name": "IAM user for S3 fiche-auto access"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nlet hasCache = false;\ntry {\n  if (item.binary && item.binary.data) {\n    const buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\n    if (buffer && buffer.length > 10) {\n      hasCache = true;\n    }\n  }\n} catch (e) {\n  hasCache = false;\n}\nreturn [{\n  json: { hasCache, plaque: $('Normalize Plaque').item.json.plaque, s3_prefix: $('Normalize Plaque').item.json.s3_prefix },\n  binary: item.binary\n}];"
+      },
+      "id": "a7efea22-6950-410d-b79a-d85367e9da72",
+      "name": "Check Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12240,
+        8520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasCache }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "e3ea1220-76ab-4c95-9d83-3e07d4fb2a8f",
+      "name": "Cache Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        12464,
+        8520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst cached = JSON.parse(buffer.toString('utf-8'));\nreturn [{ json: { ...cached, cache: 'hit' } }];"
+      },
+      "id": "95c3bc4a-f3de-4663-8fda-b5ab71b747d0",
+      "name": "Parse Cached JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12688,
+        8208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-Cache",
+                "value": "HIT"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b74fae10-72be-43df-bdb9-89cff02be078",
+      "name": "Respond Cache Hit",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        12912,
+        8208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.regcheck.org.uk/api/reg.asmx/CheckFrance?RegistrationNumber={{ $('Normalize Plaque').item.json.plaque }}&username=30mille",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "8a8e34ff-ac58-42a2-8e1b-69e931f27326",
+      "name": "RegCheck API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        12688,
+        8616
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const xml = $input.first().json.data;\nconst match = xml.match(/<vehicleJson>([\\s\\S]*?)<\\/vehicleJson>/);\n\nif (!match || !match[1]) {\n  throw new Error('RegCheck: vehicleJson introuvable dans la réponse XML');\n}\n\nconst vehicle = JSON.parse(match[1]);\nconst ext = vehicle.ExtendedData || {};\n\nreturn [{ json: {\n  regcheck_raw: vehicle,\n  marque:      vehicle.CarMake?.CurrentTextValue  || ext.marque         || vehicle.MakeDescription?.CurrentTextValue  || '',\n  modele:      vehicle.CarModel?.CurrentTextValue || ext.modele         || vehicle.ModelDescription?.CurrentTextValue || '',\n  finition:    ext.version                        || ext.libVersion     || '',\n  annee:       vehicle.RegistrationYear           || ext.anneeSortie    || '',\n  carburant:   vehicle.FuelType?.CurrentTextValue || ext.carburantVersion || '',\n  motorisation: ext.libVersion                   || ext.version        || ''\n}}];"
+      },
+      "id": "7a9e07cb-c79b-43f3-b86b-4a9a291f1f48",
+      "name": "Parse RegCheck",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        12912,
+        8688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const reg = $('Parse RegCheck').item.json;\nconst model = $('Config').item.json._config.PERPLEXITY_MODEL;\n\nconst systemPrompt = `Tu es un moteur de recherche automobile spécialisé dans les fiches techniques complètes.\n\nMÉTHODE DE RECHERCHE (dans cet ordre) :\n1. Site officiel du constructeur : configurateur en ligne, fiches techniques PDF, grilles d'équipements par finition\n2. Sites spécialisés : Largus, La Centrale, Auto-Data.net, automobile-magazine.fr, Caradisiac, Ultimate Specs\n3. Catalogues et brochures PDF du constructeur\n4. Si la finition exacte est introuvable : cherche la grille d'équipements de la gamme complète et identifie ce qui est de série DÈS la finition de base\n5. Si une fiche technique PDF constructeur est trouvée dans les résultats, EXPLOITE-LA EN PRIORITÉ pour les dimensions d'écrans, le PTAC, l'empattement et le réservoir\n\nRÈGLES STRICTES :\n- Donne chaque valeur avec son unité\n- Pour les hybrides : donne le couple COMBINÉ (thermique + électrique), pas seulement le thermique\n- Pour les équipements : précise systématiquement \"DE SÉRIE\", \"EN OPTION\" ou \"ABSENT\" pour la finition demandée\n- Si un équipement est réservé à une finition SUPÉRIEURE et absent de la finition demandée → réponds \"ABSENT\", PAS \"inconnu\"\n- Si un équipement est de série sur TOUTES les finitions de la gamme → réponds \"DE SÉRIE\"\n- Si le régulateur adaptatif est de série, le régulateur classique l'est forcément aussi\n- \"inconnu\" est un DERNIER RECOURS après avoir épuisé toutes les sources ET la logique de gamme\n- Si tu n'es pas certain d'une valeur, écris \"non confirmé : [valeur probable]\"\n- Ne laisse AUCUN champ sans réponse : écris toujours soit la valeur, soit \"inconnu\"\n\nSTRATÉGIE POUR LES ÉQUIPEMENTS MULTIMÉDIA :\n- Pour les écrans : la taille en pouces figure presque toujours dans la fiche technique constructeur ou le configurateur officiel — cherche-la activement\n- Apple CarPlay et Android Auto sont quasi-universels depuis 2020 sur les constructeurs généralistes — vérifie mais ne mets \"inconnu\" que si tu as un DOUTE réel\n- Pour les tailles d'écran en pouces : cherche dans le configurateur officiel ou les essais détaillés`;\n\nconst finition = reg.finition || \"non précisée\";\nconst motorisation = reg.motorisation || \"\";\n\nconst userPrompt = `Véhicule : ${reg.marque} ${reg.modele} ${motorisation} ${finition} ${reg.annee}\n\nTrouve les valeurs exactes pour TOUS les points suivants sans exception :\n\n━━━ IDENTITÉ ━━━\n- Marque, modèle, génération (code interne constructeur si existant, ex: NX4e, W206, Y62...), phase (1 ou 2), année modèle\n- Catégorie (SUV / berline / break / monospace / citadine / coupé / cabriolet / utilitaire)\n- Nombre de portes, nombre de places\n\n━━━ MOTORISATION ━━━\n- Type moteur (essence / diesel / hybride / hybride rechargeable / électrique / mild-hybrid)\n- Cylindrée en cm3, nombre de cylindres, architecture (en ligne / V / boxer / flat)\n- Puissance maxi en ch ET en kW, régime de puissance maxi en tr/min\n- Couple maxi COMBINÉ en Nm (pour les hybrides : couple système total, pas uniquement le thermique), plage de régime du couple maxi en tr/min\n- Alimentation (injection directe / injection indirecte / turbo / bi-turbo / atmosphérique / compresseur)\n- Norme antipollution exacte (Euro 6d / Euro 6d-TEMP / Euro 6e / Euro 6d-ISC-FCM / Euro 5...)\n\n━━━ TRANSMISSION ━━━\n- Type de boîte (manuelle / automatique convertisseur / robotisée / CVT / DCT double embrayage), nombre de rapports\n- Roues motrices (traction avant / propulsion arrière / transmission intégrale)\n\n━━━ PERFORMANCES ━━━\n- Vitesse maximale en km/h\n- 0 à 100 km/h en secondes\n\n━━━ CONSOMMATION & ÉMISSIONS (cycle WLTP) ━━━\n- Consommation mixte WLTP en L/100km\n- Consommation urbaine basse vitesse WLTP en L/100km\n- Consommation extra-urbaine WLTP en L/100km\n- Émissions CO2 en g/km (préciser WLTP ou NEDC)\n- Capacité du réservoir de carburant en litres\n\n━━━ DIMENSIONS & POIDS ━━━\n- Longueur en mm\n- Largeur en mm (hors rétroviseurs)\n- Hauteur en mm\n- Empattement en mm ← IMPORTANT : cherche spécifiquement cette valeur\n- Volume de coffre banquette en place en litres\n- Volume de coffre banquette rabattue en litres\n- Poids à vide en kg (norme EU en ordre de marche)\n- PTAC en kg ← IMPORTANT : cherche dans la fiche PDF constructeur ou les fiches homologation\n\n━━━ ROUES ━━━\n- Dimensions exactes des pneumatiques avant (ex: 215/65 R17)\n- Dimensions exactes des pneumatiques arrière\n- Diamètre des jantes en pouces\n- Jantes alliage de série : oui ou non\n\n━━━ ÉQUIPEMENTS DE SÉRIE — FINITION « ${finition} » ━━━\nCherche la grille officielle d'équipements du constructeur pour cette finition exacte.\nPour CHACUN des éléments ci-dessous, réponds par : DE SÉRIE / EN OPTION / ABSENT\n\nMULTIMÉDIA & CONNECTIVITÉ :\n- Écran tactile central : taille exacte en pouces ← IMPORTANT — cherche dans la fiche PDF constructeur ou le configurateur officiel\n- Combiné d'instrumentation numérique : taille exacte en pouces ← IMPORTANT — cherche dans la fiche PDF constructeur ou le configurateur officiel\n- Apple CarPlay (filaire et/ou sans fil) ← IMPORTANT\n- Android Auto (filaire et/ou sans fil) ← IMPORTANT\n- Navigation GPS intégrée ← IMPORTANT\n- Bluetooth\n- Chargeur smartphone sans fil (induction)\n\nAIDES À LA CONDUITE :\n- Caméra de recul\n- Radar de recul (capteurs ultrason arrière)\n- Radar avant (capteurs ultrason avant)\n- Aide au stationnement automatique (le véhicule se gare seul)\n- Régulateur de vitesse classique\n- Régulateur de vitesse adaptatif (ACC / Smart Cruise Control)\n- Limiteur de vitesse\n- Alerte de franchissement involontaire de ligne (LDW)\n- Aide active au maintien dans la voie (LKA / Lane Keeping Assist)\n- Surveillance des angles morts (BSM / Blind Spot Monitor)\n- Freinage d'urgence automatique (AEB / Forward Collision Avoidance)\n- Reconnaissance des panneaux de signalisation (TSR)\n- Alerte de trafic transversal arrière (RCTA)\n\nÉCLAIRAGE :\n- Feux avant : type exact (halogène / LED / full LED / matrix LED / LED adaptifs)\n- Feux arrière : type exact (halogène / LED)\n- Allumage automatique des feux\n\nCONFORT :\n- Climatisation : type exact (manuelle / automatique mono-zone / automatique bi-zone / tri-zone)\n- Sellerie : type exact (tissu / cuir / mixte tissu-cuir / alcantara / similicuir / TEP)\n- Sièges avant chauffants\n- Sièges avant à réglage électrique (préciser conducteur seul ou les deux)\n- Volant chauffant\n- Accès sans clé (Smart Key / keyless entry)\n- Démarrage sans clé (bouton start/stop)\n- Toit ouvrant\n- Toit panoramique (vitré fixe ou ouvrant)\n- Rétroviseurs extérieurs rabattables électriquement\n\nSTRATÉGIE DE RECHERCHE POUR CETTE FINITION :\n1. Cherche d'abord \"${reg.marque} ${reg.modele} ${finition} ${reg.annee} fiche technique équipements\"\n2. Puis \"${reg.marque} ${reg.modele} ${reg.annee} grille équipements série option par finition\"\n3. Puis \"${reg.marque} ${reg.modele} ${reg.annee} configurateur\" sur le site officiel ${reg.marque.toLowerCase()}.fr ou ${reg.marque.toLowerCase()}.com\n4. Pour l'empattement : cherche \"${reg.marque} ${reg.modele} ${reg.annee} empattement wheelbase dimensions\"\n5. Pour le réservoir : cherche \"${reg.marque} ${reg.modele} ${reg.annee} capacité réservoir fuel tank\"\n6. Pour les écrans (taille en pouces) et le PTAC : cherche dans la fiche technique PDF constructeur si disponible dans les résultats, sinon \"${reg.marque} ${reg.modele} ${reg.annee} taille écran pouces fiche technique\"\n\nRAPPEL : \"ABSENT\" ≠ \"inconnu\". Si tu vois que l'équipement n'est proposé qu'en finition supérieure → ABSENT.\nNe laisse aucun point sans réponse. \"inconnu\" uniquement en dernier recours absolu.`;\n\nreturn [{\n  json: {\n    perplexity_body: JSON.stringify({\n      model: model,\n      web_search_options: {\n        search_context_size: \"high\",\n      },\n      messages: [\n        { role: \"system\", content: systemPrompt },\n        { role: \"user\", content: userPrompt }\n      ]\n    })\n  }\n}];"
+      },
+      "id": "c90b3e01-21d8-40a7-8d90-16cdd5f5f8e9",
+      "name": "Build Perplexity Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13136,
+        8592
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "perplexityApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.perplexity_body }}",
+        "options": {}
+      },
+      "id": "f8b76944-d11f-4970-bd1d-d565c2f35c4c",
+      "name": "Perplexity Specs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        13360,
+        8592
+      ],
+      "credentials": {
+        "perplexityApi": {
+          "id": "Cvfk661CfES4PK54",
+          "name": "Perplexity account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const reg = $('Parse RegCheck').item.json;\nconst ppx = $('Perplexity Specs').item.json.choices[0].message.content;\nconst plaque = $('Normalize Plaque').item.json.plaque;\nconst model = $('Config').item.json._config.LLM_MODEL;\n\nconst n = (t) => ({ anyOf: [{ type: t }, { type: 'null' }] });\n\nconst schema = {\n  type: 'object',\n  properties: {\n    informations_generales: { type: 'object', properties: {\n      marque: { type: 'string' }, modele: { type: 'string' },\n      generation: n('string'), phase: n('integer'),\n      annee: n('integer'), version: n('string'), finition: n('string'),\n      categorie: n('string'), nombre_portes: n('integer'), nombre_places: n('integer'),\n      transmission: n('string'), boite_vitesse: n('string')\n    }, required: ['marque','modele','generation','phase','annee','version','finition','categorie','nombre_portes','nombre_places','transmission','boite_vitesse'], additionalProperties: false },\n\n    dimensions: { type: 'object', properties: {\n      longueur_mm: n('integer'), largeur_mm: n('integer'), hauteur_mm: n('integer'),\n      empattement_mm: n('integer'), poids_vide_kg: n('integer'), ptac_kg: n('integer'),\n      volume_coffre_min_l: n('integer'), volume_coffre_max_l: n('integer')\n    }, required: ['longueur_mm','largeur_mm','hauteur_mm','empattement_mm','poids_vide_kg','ptac_kg','volume_coffre_min_l','volume_coffre_max_l'], additionalProperties: false },\n\n    motorisation: { type: 'object', properties: {\n      type_moteur: n('string'), cylindree_cm3: n('integer'),\n      nombre_cylindres: n('integer'), architecture: n('string'),\n      puissance_ch: n('integer'), puissance_kw: n('integer'), puissance_regime_rpm: n('integer'),\n      couple_nm: n('integer'), couple_regime_rpm: n('string'),\n      alimentation: n('string'), norme_euro: n('string')\n    }, required: ['type_moteur','cylindree_cm3','nombre_cylindres','architecture','puissance_ch','puissance_kw','puissance_regime_rpm','couple_nm','couple_regime_rpm','alimentation','norme_euro'], additionalProperties: false },\n\n    performances: { type: 'object', properties: {\n      zero_cent_sec: n('number'), vitesse_max_kmh: n('integer')\n    }, required: ['zero_cent_sec','vitesse_max_kmh'], additionalProperties: false },\n\n    energie: { type: 'object', properties: {\n      type_carburant: n('string'), reservoir_l: n('number'),\n      consommation_mixte_l100: n('number'),\n      consommation_urbaine_l100: n('number'),\n      consommation_extra_urbaine_l100: n('number'),\n      emissions_co2_gkm: n('integer'), cycle_emissions: n('string'),\n      norme_euro: n('string')\n    }, required: ['type_carburant','reservoir_l','consommation_mixte_l100','consommation_urbaine_l100','consommation_extra_urbaine_l100','emissions_co2_gkm','cycle_emissions','norme_euro'], additionalProperties: false },\n\n    roues: { type: 'object', properties: {\n      taille_jantes_pouces: n('integer'), jantes_alliage: n('boolean'),\n      pneus_avant: n('string'), pneus_arriere: n('string')\n    }, required: ['taille_jantes_pouces','jantes_alliage','pneus_avant','pneus_arriere'], additionalProperties: false },\n\n    equipements: { type: 'object', properties: {\n      ecran_tactile_pouces: n('number'), combine_numerique_pouces: n('number'),\n      apple_carplay: n('boolean'), android_auto: n('boolean'),\n      gps_integre: n('boolean'), bluetooth: n('boolean'), chargeur_induction: n('boolean'),\n      camera_recul: n('boolean'), radar_recul: n('boolean'), radar_avant: n('boolean'),\n      aide_stationnement_auto: n('boolean'),\n      regulateur_vitesse: n('boolean'), regulateur_adaptatif: n('boolean'), limiteur_vitesse: n('boolean'),\n      alerte_franchissement_ligne: n('boolean'), aide_maintien_voie: n('boolean'),\n      surveillance_angles_morts: n('boolean'), freinage_urgence_auto: n('boolean'),\n      reconnaissance_panneaux: n('boolean'), alerte_trafic_transversal: n('boolean'),\n      feux_avant_type: n('string'), feux_arriere_type: n('string'), allumage_auto_feux: n('boolean'),\n      climatisation: n('string'), sellerie: n('string'),\n      sieges_chauffants: n('boolean'), sieges_electriques: n('boolean'), volant_chauffant: n('boolean'),\n      keyless_entry: n('boolean'), keyless_start: n('boolean'),\n      toit_ouvrant: n('boolean'), toit_panoramique: n('boolean'),\n      retros_rabattables_elec: n('boolean')\n    }, required: [\n      'ecran_tactile_pouces','combine_numerique_pouces',\n      'apple_carplay','android_auto','gps_integre','bluetooth','chargeur_induction',\n      'camera_recul','radar_recul','radar_avant','aide_stationnement_auto',\n      'regulateur_vitesse','regulateur_adaptatif','limiteur_vitesse',\n      'alerte_franchissement_ligne','aide_maintien_voie','surveillance_angles_morts',\n      'freinage_urgence_auto','reconnaissance_panneaux','alerte_trafic_transversal',\n      'feux_avant_type','feux_arriere_type','allumage_auto_feux',\n      'climatisation','sellerie','sieges_chauffants','sieges_electriques','volant_chauffant',\n      'keyless_entry','keyless_start','toit_ouvrant','toit_panoramique','retros_rabattables_elec'\n    ], additionalProperties: false },\n\n    image_prompt: { type: 'string' }\n  },\n  required: ['informations_generales','dimensions','motorisation','performances','energie','roues','equipements','image_prompt'],\n  additionalProperties: false\n};\n\nconst systemPrompt = `Tu es un extracteur de données automobiles.\nTu reçois des textes bruts contenant des informations techniques sur un véhicule.\nTu dois extraire ces informations et les retourner en JSON valide.\n\nRÈGLES :\n- Pour les valeurs numériques introuvables ou marquées \"inconnu\" : null\n- Pour les textes introuvables ou marqués \"inconnu\" : null\n- Pour les booléens marqués \"Absent\" ou \"Non\" : false\n- Pour les booléens marqués \"De série\" ou \"Oui\" : true\n- Pour les booléens marqués \"inconnu\" : null\n- N'invente AUCUNE valeur\n- Si deux sources se contredisent : préfère RegCheck pour les données administratives (marque, modèle, puissance fiscale, CO2, cylindrée) et Perplexity pour les données techniques détaillées (dimensions, équipements, performances)\n- Pour emissions_co2_gkm : TOUJOURS préférer la valeur RegCheck (donnée administrative officielle)\n- Pour puissance_kw : si seule la valeur en ch est donnée, calcule kW = ch × 0.7355 arrondi à l'entier\n- Pour couple_nm : si un couple combiné (thermique + électrique) est disponible, utilise-le. Sinon utilise le couple thermique seul\n- Pour ecran_tactile_pouces : extrais la taille en pouces directement (ne convertis PAS en cm)\n- Pour couple_regime_rpm : retourne une string (ex: \"1500-3500\")\n\nMAPPING BOOLÉENS — RÈGLES SUPPLÉMENTAIRES :\n- \"de série\", \"oui\", \"standard\", \"inclus\", \"présent\", \"disponible\" → true\n- \"absent\", \"non\", \"non disponible\", \"non proposé\", \"pas disponible\" → false\n- \"en option\", \"optionnel\" → false (seul l'équipement de série compte)\n- Si le texte mentionne un équipement suivi de \"(sans fil)\" ou \"(filaire)\" → true\n- Si le texte mentionne un sigle (LDW, LKA, BSM, AEB, RCTA, ACC, TSR) comme présent → true pour le champ correspondant\n\nDÉDUCTIONS LOGIQUES (appliquer systématiquement) :\n- Si regulateur_adaptatif = true → regulateur_vitesse = true\n- Si aide_maintien_voie = true → alerte_franchissement_ligne = true\n- Si keyless_start = true → keyless_entry = true (sauf indication contraire)\n\nEXTRACTION DES POUCES :\n- \"écran 12,3 pouces\" → 12.3\n- \"écran 10,25\"\" → 10.25\n- \"écran de 8 pouces\" → 8.0\n- Cherche le nombre associé à \"pouces\", \"inches\", le symbole \" ou ″\n\nVERSION ET FINITION :\n- Le champ \"version\" est la dénomination commerciale complète du véhicule (ex: \"1.6 T-GDi 265 N DCT\", \"2.0 BlueHDi 130 EAT8\", \"E 220d 4MATIC AMG Line\")\n- Cherche cette info dans RegCheck en priorité (champ Description, Version, libVersion ou Variant)\n- Le champ \"finition\" est le nom commercial de la finition, extrait du dernier mot ou groupe de mots de la version (ex: \"1.6 T-GDI HYBRID 215 INITIA\" → finition = \"INITIA\", \"2.0 BlueHDi 130 EAT8 Allure\" → finition = \"Allure\", \"E 220d 4MATIC AMG Line\" → finition = \"AMG Line\")\n- Si la finition est mentionnée dans le titre de la section équipements Perplexity, utilise-la en confirmation\n\nVALEURS \"non confirmé\" :\n- Si Perplexity renvoie \"non confirmé : [valeur]\", extrais la valeur entre crochets et utilise-la (elle est probable et préférable à null)\n\nPour image_prompt : prompt anglais au format :\n\"[YEAR] [BRAND] [MODEL] [COLOR or orange] [BODY_TYPE], professional automotive photography, 3/4 front view, neutral background, natural daylight, ultra realistic, 8k\"`;\n\nconst userPrompt = 'Véhicule : ' + plaque + '\\n\\n### SOURCE 1 — RegCheck\\n' + JSON.stringify(reg.regcheck_raw, null, 2) + '\\n\\n### SOURCE 2 — Perplexity\\n' + ppx + '\\n\\nExtrais toutes les informations dans le JSON structuré.';\n\nreturn [{\n  json: {\n    openai_body: JSON.stringify({\n      model: model,\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user', content: userPrompt }\n      ],\n      response_format: {\n        type: 'json_schema',\n        json_schema: { name: 'fiche_technique', strict: true, schema: schema }\n      },\n      temperature: 0\n    })\n  }\n}];\n"
+      },
+      "id": "7f4ab01a-2e71-4e00-ba7f-299e59a3c45d",
+      "name": "Build LLM Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13584,
+        8664
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.openai_body }}",
+        "options": {}
+      },
+      "id": "039e4904-449a-4b1b-ab1d-3083224bf0ed",
+      "name": "OpenAI Extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        13808,
+        8664
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "XEH6UnHPZLlWjfRN",
+          "name": "OpenAi account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = $input.first().json.choices[0].message.content;\nlet parsed;\ntry {\n  let cleaned = content.trim();\n  if (cleaned.startsWith('`')) {\n    cleaned = cleaned.replace(/^```(?:json)?\\s*\\n?/, '').replace(/\\n?```\\s*$/, '');\n  }\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  throw new Error('LLM: JSON invalide - ' + e.message);\n}\nif (parsed.output) parsed = parsed.output;\nreturn [{ json: { output: parsed } }];"
+      },
+      "id": "080180cf-7562-49c7-a36d-907dd066fc24",
+      "name": "Parse LLM Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        14032,
+        8712
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "model": "={{ $('Config').item.json._config.IMAGE_MODEL }}",
+        "prompt": "={{ $json.image_prompt }}",
+        "options": {
+          "quality": "high",
+          "size": "1536x1024"
+        },
+        "images": {
+          "values": [
+            {}
+          ]
+        }
+      },
+      "id": "3d4c031f-e8e5-4637-9367-45a4b3b8f8d5",
+      "name": "Generate Image",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        13360,
+        8856
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "XEH6UnHPZLlWjfRN",
+          "name": "OpenAi account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const extracted = $('Parse LLM Response').item.json.output || {};\n\nconst plaque = $('Normalize Plaque').item.json.plaque;\nconst s3_prefix = $('Normalize Plaque').item.json.s3_prefix;\nconst cfg = $('Config').item.json._config;\nconst regcheck = $('Parse RegCheck').item.json.regcheck_raw || {};\n\n// Image URL is set optimistically — the parallel branch uploads it to S3\nconst image_url = `https://${cfg.S3_BUCKET}.s3.${cfg.S3_REGION}.amazonaws.com/${s3_prefix}/photo.png`;\n\nconst allFields = Object.values(extracted)\n  .flatMap(section =>\n    typeof section === 'object' && section !== null\n      ? Object.entries(section)\n      : []\n  );\nconst totalFields = allFields.length;\nconst nullFields = allFields.filter(([k, v]) => v === null).map(([k]) => k);\nconst nonNullCount = totalFields - nullFields.length;\nconst score = totalFields > 0 ? Math.round((nonNullCount / totalFields) * 100) : 0;\n\nconst fiche = {\n  ...extracted,\n  plaque,\n  image_url,\n  sources: {\n    regcheck_vehicule_id: regcheck.VehicleId || null,\n    regcheck_vin: regcheck.Vin || null\n  },\n  qualite: {\n    score_completude: score,\n    total_champs: totalFields,\n    champs_renseignes: nonNullCount,\n    champs_null: nullFields\n  },\n  generated_at: new Date().toISOString(),\n  cache: 'miss'\n};\n\nconst jsonBuf = Buffer.from(JSON.stringify(fiche, null, 2), 'utf-8');\nreturn [{\n  json: { fiche, s3_prefix },\n  binary: {\n    data_json: await this.helpers.prepareBinaryData(jsonBuf, 'data.json', 'application/json')\n  }\n}];"
+      },
+      "id": "9ad45156-faea-4918-8d77-31d189d07b6d",
+      "name": "Assemble Fiche",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        14256,
+        8712
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.fiche) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-Cache",
+                "value": "MISS"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5c498e02-ce55-4025-a03e-ef1e81c8b242",
+      "name": "Respond Cache Miss",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        14480,
+        8616
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $('Config').item.json._config.S3_BUCKET }}",
+        "fileName": "={{ $json.s3_prefix }}/data.json",
+        "binaryPropertyName": "data_json",
+        "additionalFields": {}
+      },
+      "id": "97db3d53-57e4-425e-888e-73fa96a292f5",
+      "name": "S3 Upload JSON",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        14480,
+        8808
+      ],
+      "credentials": {
+        "aws": {
+          "id": "avxR0VFqsBXPQ02d",
+          "name": "IAM user for S3 fiche-auto access"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $('Config').item.json._config.S3_BUCKET }}",
+        "fileName": "={{ $json.s3_prefix }}/photo.png",
+        "binaryPropertyName": "photo",
+        "additionalFields": {}
+      },
+      "id": "83c8c094-03be-4ac8-9a4b-30e2ec5308c3",
+      "name": "S3 Upload Photo",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 1,
+      "position": [
+        13808,
+        8856
+      ],
+      "credentials": {
+        "aws": {
+          "id": "avxR0VFqsBXPQ02d",
+          "name": "IAM user for S3 fiche-auto access"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Erreur serveur', detail: $json.errorMessage || 'Une étape du pipeline a échoué' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "345928f7-7c20-46fb-b9fc-69e20d90041a",
+      "name": "Respond 500",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        14032,
+        8448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const reg = $('Parse RegCheck').item.json;\nconst marque = reg.marque || 'car';\nconst modele = reg.modele || '';\nconst annee = reg.annee || '';\nconst prompt = `${annee} ${marque} ${modele} orange, professional automotive photography, 3/4 front view, neutral background, natural daylight, ultra realistic, 8k`;\nreturn [{ json: { image_prompt: prompt.trim() } }];"
+      },
+      "id": "3e85657f-fbe7-45f4-86ff-86fc20bbfb14",
+      "name": "Build Image Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13136,
+        8856
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputItem = $input.first();\nconst s3_prefix = $('Normalize Plaque').item.json.s3_prefix;\n\n// Pass through the binary from Generate Image + the s3_prefix needed by S3 Upload Photo\nreturn [{\n  json: { s3_prefix },\n  binary: inputItem.binary\n}];"
+      },
+      "id": "fbe64036-d346-4787-b64a-5c8aeca5a493",
+      "name": "Prepare Photo Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        13584,
+        8856
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Plaque",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Plaque": {
+      "main": [
+        [
+          {
+            "node": "S3 Read Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Read Cache": {
+      "main": [
+        [
+          {
+            "node": "Check Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cache": {
+      "main": [
+        [
+          {
+            "node": "Cache Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Exists?": {
+      "main": [
+        [
+          {
+            "node": "Parse Cached JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RegCheck API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Cached JSON": {
+      "main": [
+        [
+          {
+            "node": "Respond Cache Hit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RegCheck API": {
+      "main": [
+        [
+          {
+            "node": "Parse RegCheck",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 500",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse RegCheck": {
+      "main": [
+        [
+          {
+            "node": "Build Perplexity Query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Perplexity Query": {
+      "main": [
+        [
+          {
+            "node": "Perplexity Specs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Specs": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 500",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Extract": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 500",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response": {
+      "main": [
+        [
+          {
+            "node": "Assemble Fiche",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Fiche": {
+      "main": [
+        [
+          {
+            "node": "Respond Cache Miss",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "S3 Upload JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Prepare Photo Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Photo Upload": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "activeVersionId": null,
+  "versionCounter": 259,
+  "shared": [
+    {
+      "updatedAt": "2026-01-23T13:26:43.560Z",
+      "createdAt": "2026-01-23T13:26:43.560Z",
+      "role": "workflow:owner",
+      "workflowId": "jIkIEdl2_UiQV0mddJq5T",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}

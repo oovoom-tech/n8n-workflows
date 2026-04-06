@@ -1,0 +1,494 @@
+{
+  "id": "ULFbFx4nLic5D5lX",
+  "name": "Invoice Import Checker",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "invoices-imported-checker",
+        "formTitle": "Identification des factures non importées",
+        "formDescription": "Téléchargez votre fichier d'import au format csv",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "csv_file",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".csv",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "responseNode"
+      },
+      "id": "15658415-7f38-4910-a65b-5fbc33db883a",
+      "name": "Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "c5d020f9-67a7-4831-b20d-9d4fe7c34f2d"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "csv_file",
+        "options": {
+          "delimiter": ";",
+          "encoding": "utf-8",
+          "headerRow": true
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "5cad9fa7-71e9-4068-b3af-3fc65fe68232",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    invoiceNumbers: $input.all().map((item) => item.json['Invoice number*']),\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "c4a844fd-e7e8-480b-93f4-c5af75bb693a",
+      "name": "Extract Invoice Numbers"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT title FROM invoices WHERE title IN ({{ $json.invoiceNumbers.map(num => `'${num}'`).join(',') }})",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        660,
+        0
+      ],
+      "id": "c794b185-605c-40a6-8321-0865d9f674ff",
+      "name": "MySQL",
+      "alwaysOutputData": true,
+      "credentials": {
+        "mySql": {
+          "id": "zQwyCsm7yEldMccQ",
+          "name": "MySQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const allInvoices = $('Extract from File').all();\nconst existingInvoiceNumbers = $input.all().map(item => item.json.title);\n\n// Convertir l'array en objet pour une recherche O(1)\nconst existingInvoicesMap = {};\nexistingInvoiceNumbers.forEach(invoiceNumber => {\n  existingInvoicesMap[invoiceNumber] = true;\n});\n\nconst nonImportedInvoices = allInvoices.filter(item => {\n  return !existingInvoicesMap[item.json['Invoice number*']];\n});\n\nreturn nonImportedInvoices;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "d3475427-5096-4e22-8727-fe8c17871be1",
+      "name": "Filter Non Imported Invoices"
+    },
+    {
+      "parameters": {
+        "options": {
+          "delimiter": ";",
+          "fileName": "=factures_non_importées.csv",
+          "headerRow": true
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "70237d2c-29cd-4e54-8078-e0f7bdd22368",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "respondWith": "binary",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        0
+      ],
+      "id": "f11c51be-357c-4860-8639-4d272c52bc04",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Your existing code is mostly correct, just make sure the return is properly formatted\nconst binaryData = $input.first().binary.data;\nconst base64Data = binaryData.data;\nconst fileName = \"factures_non_importees.csv\";\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Traitement terminé</title>\n    <style>\n        body {\n            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n            max-width: 600px;\n            margin: 50px auto;\n            padding: 20px;\n            text-align: center;\n            background-color: #f5f5f5;\n        }\n        .container {\n            background: white;\n            padding: 40px;\n            border-radius: 10px;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .success-icon {\n            font-size: 48px;\n            color: #28a745;\n            margin-bottom: 20px;\n        }\n        .download-btn {\n            background-color: #007bff;\n            color: white;\n            padding: 12px 30px;\n            border: none;\n            border-radius: 5px;\n            font-size: 16px;\n            cursor: pointer;\n            text-decoration: none;\n            display: inline-block;\n            margin-top: 20px;\n            transition: background-color 0.3s;\n        }\n        .download-btn:hover {\n            background-color: #0056b3;\n        }\n        .info {\n            color: #666;\n            margin-top: 20px;\n            font-size: 14px;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"container\">\n        <div class=\"success-icon\">✅</div>\n        <h1>Traitement terminé avec succès !</h1>\n        <p>Votre fichier CSV des factures non importées est prêt.</p>\n        \n        <a href=\"data:text/csv;base64,${base64Data}\" \n           download=\"${fileName}\" \n           class=\"download-btn\">\n            📥 Télécharger le fichier CSV\n        </a>\n        \n        <div class=\"info\">\n            <p>Le fichier sera sauvegardé dans votre dossier de téléchargements.</p>\n            <p>Compatible avec tous les navigateurs, y compris Safari.</p>\n        </div>\n    </div>\n</body>\n</html>\n`;\n\nreturn [{\n    binary: {\n        data: {\n            data: Buffer.from(htmlContent).toString('base64'),\n            mimeType: 'text/html',\n            fileName: 'result.html'\n        }\n    }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "4c208a2d-2b46-4980-92ed-c23d41f5932c",
+      "name": "Build Download Page"
+    }
+  ],
+  "connections": {
+    "Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Extract Invoice Numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Invoice Numbers": {
+      "main": [
+        [
+          {
+            "node": "MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL": {
+      "main": [
+        [
+          {
+            "node": "Filter Non Imported Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Non Imported Invoices": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Build Download Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Download Page": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "activeVersionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
+  "versionCounter": 24,
+  "shared": [
+    {
+      "updatedAt": "2025-06-13T11:36:12.505Z",
+      "createdAt": "2025-06-13T11:36:12.505Z",
+      "role": "workflow:owner",
+      "workflowId": "ULFbFx4nLic5D5lX",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2025-12-01T02:32:28.263Z",
+    "createdAt": "2025-12-01T02:32:28.263Z",
+    "versionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
+    "workflowId": "ULFbFx4nLic5D5lX",
+    "nodes": [
+      {
+        "parameters": {
+          "path": "invoices-imported-checker",
+          "formTitle": "Identification des factures non importées",
+          "formDescription": "Téléchargez votre fichier d'import au format csv",
+          "formFields": {
+            "values": [
+              {
+                "fieldLabel": "csv_file",
+                "fieldType": "file",
+                "multipleFiles": false,
+                "acceptFileTypes": ".csv",
+                "requiredField": true
+              }
+            ]
+          },
+          "responseMode": "responseNode"
+        },
+        "id": "15658415-7f38-4910-a65b-5fbc33db883a",
+        "name": "Form Trigger",
+        "type": "n8n-nodes-base.formTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "c5d020f9-67a7-4831-b20d-9d4fe7c34f2d"
+      },
+      {
+        "parameters": {
+          "binaryPropertyName": "csv_file",
+          "options": {
+            "delimiter": ";",
+            "encoding": "utf-8",
+            "headerRow": true
+          }
+        },
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          220,
+          0
+        ],
+        "id": "5cad9fa7-71e9-4068-b3af-3fc65fe68232",
+        "name": "Extract from File"
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{\n  json: {\n    invoiceNumbers: $input.all().map((item) => item.json['Invoice number*']),\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          0
+        ],
+        "id": "c4a844fd-e7e8-480b-93f4-c5af75bb693a",
+        "name": "Extract Invoice Numbers"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT title FROM invoices WHERE title IN ({{ $json.invoiceNumbers.map(num => `'${num}'`).join(',') }})",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [
+          660,
+          0
+        ],
+        "id": "c794b185-605c-40a6-8321-0865d9f674ff",
+        "name": "MySQL",
+        "alwaysOutputData": true,
+        "credentials": {
+          "mySql": {
+            "id": "zQwyCsm7yEldMccQ",
+            "name": "MySQL account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const allInvoices = $('Extract from File').all();\nconst existingInvoiceNumbers = $input.all().map(item => item.json.title);\n\n// Convertir l'array en objet pour une recherche O(1)\nconst existingInvoicesMap = {};\nexistingInvoiceNumbers.forEach(invoiceNumber => {\n  existingInvoicesMap[invoiceNumber] = true;\n});\n\nconst nonImportedInvoices = allInvoices.filter(item => {\n  return !existingInvoicesMap[item.json['Invoice number*']];\n});\n\nreturn nonImportedInvoices;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          0
+        ],
+        "id": "d3475427-5096-4e22-8727-fe8c17871be1",
+        "name": "Filter Non Imported Invoices"
+      },
+      {
+        "parameters": {
+          "options": {
+            "delimiter": ";",
+            "fileName": "=factures_non_importées.csv",
+            "headerRow": true
+          }
+        },
+        "type": "n8n-nodes-base.convertToFile",
+        "typeVersion": 1.1,
+        "position": [
+          1100,
+          0
+        ],
+        "id": "70237d2c-29cd-4e54-8078-e0f7bdd22368",
+        "name": "Convert to File"
+      },
+      {
+        "parameters": {
+          "respondWith": "binary",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1560,
+          0
+        ],
+        "id": "f11c51be-357c-4860-8639-4d272c52bc04",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Your existing code is mostly correct, just make sure the return is properly formatted\nconst binaryData = $input.first().binary.data;\nconst base64Data = binaryData.data;\nconst fileName = \"factures_non_importees.csv\";\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Traitement terminé</title>\n    <style>\n        body {\n            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n            max-width: 600px;\n            margin: 50px auto;\n            padding: 20px;\n            text-align: center;\n            background-color: #f5f5f5;\n        }\n        .container {\n            background: white;\n            padding: 40px;\n            border-radius: 10px;\n            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n        }\n        .success-icon {\n            font-size: 48px;\n            color: #28a745;\n            margin-bottom: 20px;\n        }\n        .download-btn {\n            background-color: #007bff;\n            color: white;\n            padding: 12px 30px;\n            border: none;\n            border-radius: 5px;\n            font-size: 16px;\n            cursor: pointer;\n            text-decoration: none;\n            display: inline-block;\n            margin-top: 20px;\n            transition: background-color 0.3s;\n        }\n        .download-btn:hover {\n            background-color: #0056b3;\n        }\n        .info {\n            color: #666;\n            margin-top: 20px;\n            font-size: 14px;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"container\">\n        <div class=\"success-icon\">✅</div>\n        <h1>Traitement terminé avec succès !</h1>\n        <p>Votre fichier CSV des factures non importées est prêt.</p>\n        \n        <a href=\"data:text/csv;base64,${base64Data}\" \n           download=\"${fileName}\" \n           class=\"download-btn\">\n            📥 Télécharger le fichier CSV\n        </a>\n        \n        <div class=\"info\">\n            <p>Le fichier sera sauvegardé dans votre dossier de téléchargements.</p>\n            <p>Compatible avec tous les navigateurs, y compris Safari.</p>\n        </div>\n    </div>\n</body>\n</html>\n`;\n\nreturn [{\n    binary: {\n        data: {\n            data: Buffer.from(htmlContent).toString('base64'),\n            mimeType: 'text/html',\n            fileName: 'result.html'\n        }\n    }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1320,
+          0
+        ],
+        "id": "4c208a2d-2b46-4980-92ed-c23d41f5932c",
+        "name": "Build Download Page"
+      }
+    ],
+    "connections": {
+      "Form Trigger": {
+        "main": [
+          [
+            {
+              "node": "Extract from File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract from File": {
+        "main": [
+          [
+            {
+              "node": "Extract Invoice Numbers",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Invoice Numbers": {
+        "main": [
+          [
+            {
+              "node": "MySQL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "MySQL": {
+        "main": [
+          [
+            {
+              "node": "Filter Non Imported Invoices",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter Non Imported Invoices": {
+        "main": [
+          [
+            {
+              "node": "Convert to File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Convert to File": {
+        "main": [
+          [
+            {
+              "node": "Build Download Page",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Download Page": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "system migration",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2025-06-13T14:23:51.844Z",
+        "id": 3,
+        "workflowId": "ULFbFx4nLic5D5lX",
+        "versionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
+        "event": "activated",
+        "userId": null
+      }
+    ]
+  }
+}

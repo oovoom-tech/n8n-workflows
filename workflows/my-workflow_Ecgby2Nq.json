@@ -1,0 +1,69 @@
+{
+  "id": "Ecgby2NqyWWkR9vn",
+  "name": "My workflow",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "format": "raw",
+        "options": {
+          "trackLastMessageId": true
+        }
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6c9532e2-095e-416b-b3a7-35555ab28c30",
+      "name": "Email Trigger (IMAP)",
+      "retryOnFail": true,
+      "waitBetweenTries": 100,
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "notesInFlow": true,
+      "credentials": {
+        "imap": {
+          "id": "cdSDEhRuDUOLMpNb",
+          "name": "IMAP account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "activeVersionId": null,
+  "versionCounter": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-01-04T07:09:09.020Z",
+      "createdAt": "2026-01-04T07:09:09.020Z",
+      "role": "workflow:owner",
+      "workflowId": "Ecgby2NqyWWkR9vn",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}
