@@ -224,14 +224,18 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "RENqqrrByitDDLeg",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "meta": {
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
   "activeVersionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
-  "versionCounter": 24,
+  "versionCounter": 27,
   "shared": [
     {
       "updatedAt": "2025-06-13T11:36:12.505Z",
@@ -488,6 +492,22 @@
         "versionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
         "event": "activated",
         "userId": null
+      },
+      {
+        "createdAt": "2026-04-06T16:42:18.874Z",
+        "id": 96,
+        "workflowId": "ULFbFx4nLic5D5lX",
+        "versionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
+        "event": "deactivated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      },
+      {
+        "createdAt": "2026-04-06T16:42:18.886Z",
+        "id": 97,
+        "workflowId": "ULFbFx4nLic5D5lX",
+        "versionId": "8b8a7b74-bf20-4d31-bfa3-19cad3db2238",
+        "event": "activated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
       }
     ]
   }

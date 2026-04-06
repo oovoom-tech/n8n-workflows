@@ -1,0 +1,454 @@
+{
+  "id": "RENqqrrByitDDLeg",
+  "name": "Error Handler → Slack",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "err-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "format-msg",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "var data = $input.first().json;\nvar staticData = $getWorkflowStaticData('node');\nvar now = Date.now();\nvar COOLDOWN = 5 * 60 * 1000;\nvar N8N_URL = 'https://n8n.oovoom.com';\n\nvar isExecError = Boolean(data.execution);\nvar workflowName = data.workflow ? data.workflow.name : 'Unknown';\nvar workflowId = data.workflow ? data.workflow.id : '';\nvar errorMsg, nodeName, execUrl, mode;\n\nif (isExecError) {\n  errorMsg = data.execution.error ? data.execution.error.message : 'Unknown error';\n  nodeName = data.execution.lastNodeExecuted || '';\n  execUrl = data.execution.url || '';\n  mode = data.execution.mode || '';\n} else {\n  errorMsg = data.trigger && data.trigger.error ? data.trigger.error.message : 'Unknown';\n  var cause = data.trigger && data.trigger.error && data.trigger.error.cause\n    ? data.trigger.error.cause.message : '';\n  if (cause) errorMsg = errorMsg + '\\nCause: ' + cause;\n  nodeName = '';\n  execUrl = '';\n  mode = data.trigger ? data.trigger.mode : '';\n}\n\nvar dedupKey = workflowId + '_' + errorMsg.slice(0, 100);\nvar keys = Object.keys(staticData);\nfor (var i = 0; i < keys.length; i++) {\n  if (typeof staticData[keys[i]] === 'number' && staticData[keys[i]] < now - COOLDOWN) {\n    delete staticData[keys[i]];\n  }\n}\nif (staticData[dedupKey] && (now - staticData[dedupKey]) < COOLDOWN) {\n  return [];\n}\nstaticData[dedupKey] = now;\n\nvar timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);\nvar blocks = [];\n\nblocks.push({\n  type: 'header',\n  text: { type: 'plain_text', text: isExecError ? '\\ud83d\\udd34 Workflow Failed' : '\\ud83d\\udd34 Trigger Failed' }\n});\n\nvar fields = [\n  { type: 'mrkdwn', text: '*Workflow:*\\n' + workflowName }\n];\nif (nodeName) fields.push({ type: 'mrkdwn', text: '*Node:*\\n' + nodeName });\nif (mode) fields.push({ type: 'mrkdwn', text: '*Mode:*\\n' + mode });\nfields.push({ type: 'mrkdwn', text: '*Time:*\\n' + timestamp });\nblocks.push({ type: 'section', fields: fields });\n\nblocks.push({\n  type: 'section',\n  text: { type: 'mrkdwn', text: '*Error:*\\n```' + errorMsg.slice(0, 500) + '```' }\n});\n\nvar buttons = [];\nif (execUrl) {\n  buttons.push({\n    type: 'button',\n    text: { type: 'plain_text', text: '\\ud83d\\udd17 View Execution' },\n    url: execUrl,\n    style: 'danger'\n  });\n}\nbuttons.push({\n  type: 'button',\n  text: { type: 'plain_text', text: '\\u2699\\ufe0f Open Workflow' },\n  url: N8N_URL + '/workflow/' + workflowId\n});\nblocks.push({ type: 'actions', elements: buttons });\nblocks.push({ type: 'divider' });\n\nvar fallback = (isExecError ? 'Failed' : 'Trigger Failed') + ': ' + workflowName + ' - ' + errorMsg.slice(0, 200);\n\nreturn [{ json: { blocks: JSON.stringify(blocks), fallbackText: fallback } }];"
+      }
+    },
+    {
+      "id": "slack-post",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "C0AQP2Q1D2B"
+        },
+        "messageType": "block",
+        "blocksUi": "={{ $json.blocks }}",
+        "text": "={{ $json.fallbackText }}",
+        "otherOptions": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "XbVsH8G9fd7hWHCD",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "schedule",
+      "name": "Auto-Register Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        600
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 3 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "list-all",
+      "name": "List All Workflows",
+      "type": "n8n-nodes-base.n8n",
+      "typeVersion": 1,
+      "position": [
+        300,
+        600
+      ],
+      "parameters": {
+        "resource": "workflow",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "credentials": {
+        "n8nApi": {
+          "id": "AFbLekABEe2MQWWt",
+          "name": "n8n API (self)"
+        }
+      }
+    },
+    {
+      "id": "auto-register",
+      "name": "Find Unregistered",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        600
+      ],
+      "parameters": {
+        "jsCode": "var thisWorkflowId = $('Auto-Register Schedule').first().json;\nvar workflows = $input.all().map(function(i) { return i.json; });\nvar results = [];\n\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  if (!wf.active) continue;\n  var settings = wf.settings || {};\n  var needsUpdate = !settings.errorWorkflow || settings.saveDataErrorExecution !== 'all';\n  if (needsUpdate) {\n    results.push({ json: {\n      workflowId: wf.id,\n      name: wf.name,\n      currentSettings: settings\n    }});\n  }\n}\n\nreturn results.length > 0 ? results : [];"
+      }
+    },
+    {
+      "id": "update-wf",
+      "name": "Register Error Handler",
+      "type": "n8n-nodes-base.n8n",
+      "typeVersion": 1,
+      "position": [
+        900,
+        600
+      ],
+      "parameters": {
+        "resource": "workflow",
+        "operation": "update",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.workflowId }}"
+        },
+        "workflowObject": "={{ JSON.stringify({ settings: Object.assign({}, $json.currentSettings, { errorWorkflow: 'RENqqrrByitDDLeg', saveDataErrorExecution: 'all' }) }) }}"
+      },
+      "credentials": {
+        "n8nApi": {
+          "id": "AFbLekABEe2MQWWt",
+          "name": "n8n API (self)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Register Schedule": {
+      "main": [
+        [
+          {
+            "node": "List All Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List All Workflows": {
+      "main": [
+        [
+          {
+            "node": "Find Unregistered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Unregistered": {
+      "main": [
+        [
+          {
+            "node": "Register Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Paris",
+    "saveDataErrorExecution": "all",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "meta": null,
+  "pinData": null,
+  "activeVersionId": "29d29614-f223-4542-b20d-ce25042bdbac",
+  "versionCounter": 5,
+  "shared": [
+    {
+      "updatedAt": "2026-04-06T16:41:59.438Z",
+      "createdAt": "2026-04-06T16:41:59.438Z",
+      "role": "workflow:owner",
+      "workflowId": "RENqqrrByitDDLeg",
+      "projectId": "P9SvyFAiUp8zOrZ7",
+      "project": {
+        "updatedAt": "2025-03-12T09:28:18.948Z",
+        "createdAt": "2025-03-12T07:47:56.846Z",
+        "id": "P9SvyFAiUp8zOrZ7",
+        "name": "Yohan Levy <yohan@oovoom.fr>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-06T16:42:05.614Z",
+    "createdAt": "2026-04-06T16:42:05.614Z",
+    "versionId": "29d29614-f223-4542-b20d-ce25042bdbac",
+    "workflowId": "RENqqrrByitDDLeg",
+    "nodes": [
+      {
+        "id": "err-trigger",
+        "name": "Error Trigger",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          300
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "format-msg",
+        "name": "Format Slack Message",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          300,
+          300
+        ],
+        "parameters": {
+          "jsCode": "var data = $input.first().json;\nvar staticData = $getWorkflowStaticData('node');\nvar now = Date.now();\nvar COOLDOWN = 5 * 60 * 1000;\nvar N8N_URL = 'https://n8n.oovoom.com';\n\nvar isExecError = Boolean(data.execution);\nvar workflowName = data.workflow ? data.workflow.name : 'Unknown';\nvar workflowId = data.workflow ? data.workflow.id : '';\nvar errorMsg, nodeName, execUrl, mode;\n\nif (isExecError) {\n  errorMsg = data.execution.error ? data.execution.error.message : 'Unknown error';\n  nodeName = data.execution.lastNodeExecuted || '';\n  execUrl = data.execution.url || '';\n  mode = data.execution.mode || '';\n} else {\n  errorMsg = data.trigger && data.trigger.error ? data.trigger.error.message : 'Unknown';\n  var cause = data.trigger && data.trigger.error && data.trigger.error.cause\n    ? data.trigger.error.cause.message : '';\n  if (cause) errorMsg = errorMsg + '\\nCause: ' + cause;\n  nodeName = '';\n  execUrl = '';\n  mode = data.trigger ? data.trigger.mode : '';\n}\n\nvar dedupKey = workflowId + '_' + errorMsg.slice(0, 100);\nvar keys = Object.keys(staticData);\nfor (var i = 0; i < keys.length; i++) {\n  if (typeof staticData[keys[i]] === 'number' && staticData[keys[i]] < now - COOLDOWN) {\n    delete staticData[keys[i]];\n  }\n}\nif (staticData[dedupKey] && (now - staticData[dedupKey]) < COOLDOWN) {\n  return [];\n}\nstaticData[dedupKey] = now;\n\nvar timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);\nvar blocks = [];\n\nblocks.push({\n  type: 'header',\n  text: { type: 'plain_text', text: isExecError ? '\\ud83d\\udd34 Workflow Failed' : '\\ud83d\\udd34 Trigger Failed' }\n});\n\nvar fields = [\n  { type: 'mrkdwn', text: '*Workflow:*\\n' + workflowName }\n];\nif (nodeName) fields.push({ type: 'mrkdwn', text: '*Node:*\\n' + nodeName });\nif (mode) fields.push({ type: 'mrkdwn', text: '*Mode:*\\n' + mode });\nfields.push({ type: 'mrkdwn', text: '*Time:*\\n' + timestamp });\nblocks.push({ type: 'section', fields: fields });\n\nblocks.push({\n  type: 'section',\n  text: { type: 'mrkdwn', text: '*Error:*\\n```' + errorMsg.slice(0, 500) + '```' }\n});\n\nvar buttons = [];\nif (execUrl) {\n  buttons.push({\n    type: 'button',\n    text: { type: 'plain_text', text: '\\ud83d\\udd17 View Execution' },\n    url: execUrl,\n    style: 'danger'\n  });\n}\nbuttons.push({\n  type: 'button',\n  text: { type: 'plain_text', text: '\\u2699\\ufe0f Open Workflow' },\n  url: N8N_URL + '/workflow/' + workflowId\n});\nblocks.push({ type: 'actions', elements: buttons });\nblocks.push({ type: 'divider' });\n\nvar fallback = (isExecError ? 'Failed' : 'Trigger Failed') + ': ' + workflowName + ' - ' + errorMsg.slice(0, 200);\n\nreturn [{ json: { blocks: JSON.stringify(blocks), fallbackText: fallback } }];"
+        }
+      },
+      {
+        "id": "slack-post",
+        "name": "Post to Slack",
+        "type": "n8n-nodes-base.slack",
+        "typeVersion": 2.4,
+        "position": [
+          600,
+          300
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "post",
+          "select": "channel",
+          "channelId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "C0AQP2Q1D2B"
+          },
+          "messageType": "block",
+          "blocksUi": "={{ $json.blocks }}",
+          "text": "={{ $json.fallbackText }}",
+          "otherOptions": {}
+        },
+        "credentials": {
+          "slackApi": {
+            "id": "XbVsH8G9fd7hWHCD",
+            "name": "Slack account"
+          }
+        },
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 3000
+      },
+      {
+        "id": "schedule",
+        "name": "Auto-Register Schedule",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          600
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "cronExpression",
+                "expression": "0 3 * * *"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "list-all",
+        "name": "List All Workflows",
+        "type": "n8n-nodes-base.n8n",
+        "typeVersion": 1,
+        "position": [
+          300,
+          600
+        ],
+        "parameters": {
+          "resource": "workflow",
+          "operation": "getAll",
+          "returnAll": true,
+          "filters": {}
+        },
+        "credentials": {
+          "n8nApi": {
+            "id": "AFbLekABEe2MQWWt",
+            "name": "n8n API (self)"
+          }
+        }
+      },
+      {
+        "id": "auto-register",
+        "name": "Find Unregistered",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          600,
+          600
+        ],
+        "parameters": {
+          "jsCode": "var thisWorkflowId = $('Auto-Register Schedule').first().json;\nvar workflows = $input.all().map(function(i) { return i.json; });\nvar results = [];\n\nfor (var i = 0; i < workflows.length; i++) {\n  var wf = workflows[i];\n  if (!wf.active) continue;\n  var settings = wf.settings || {};\n  var needsUpdate = !settings.errorWorkflow || settings.saveDataErrorExecution !== 'all';\n  if (needsUpdate) {\n    results.push({ json: {\n      workflowId: wf.id,\n      name: wf.name,\n      currentSettings: settings\n    }});\n  }\n}\n\nreturn results.length > 0 ? results : [];"
+        }
+      },
+      {
+        "id": "update-wf",
+        "name": "Register Error Handler",
+        "type": "n8n-nodes-base.n8n",
+        "typeVersion": 1,
+        "position": [
+          900,
+          600
+        ],
+        "parameters": {
+          "resource": "workflow",
+          "operation": "update",
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "={{ $json.workflowId }}"
+          },
+          "workflowObject": "={{ JSON.stringify({ settings: Object.assign({}, $json.currentSettings, { errorWorkflow: 'RENqqrrByitDDLeg', saveDataErrorExecution: 'all' }) }) }}"
+        },
+        "credentials": {
+          "n8nApi": {
+            "id": "AFbLekABEe2MQWWt",
+            "name": "n8n API (self)"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Error Trigger": {
+        "main": [
+          [
+            {
+              "node": "Format Slack Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Slack Message": {
+        "main": [
+          [
+            {
+              "node": "Post to Slack",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Auto-Register Schedule": {
+        "main": [
+          [
+            {
+              "node": "List All Workflows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "List All Workflows": {
+        "main": [
+          [
+            {
+              "node": "Find Unregistered",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Find Unregistered": {
+        "main": [
+          [
+            {
+              "node": "Register Error Handler",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Yohan Levy",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-06T16:42:05.666Z",
+        "id": 91,
+        "workflowId": "RENqqrrByitDDLeg",
+        "versionId": "29d29614-f223-4542-b20d-ce25042bdbac",
+        "event": "activated",
+        "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
+      }
+    ]
+  }
+}
