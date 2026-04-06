@@ -139,7 +139,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) { stats.created++; }\n  else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n  } else { stats.updated++; }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: 'sync: ' + parts.join(', '), stats: stats } }];"
+        "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\n// Build commit title\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\n// Build commit body with details\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nvar commitMessage = title + '\\n' + body;\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: commitMessage, stats: stats } }];"
       }
     },
     {
@@ -527,8 +527,8 @@
   },
   "meta": null,
   "pinData": null,
-  "activeVersionId": "a78c107a-daf1-44a6-877e-8378448a17c3",
-  "versionCounter": 20,
+  "activeVersionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
+  "versionCounter": 23,
   "shared": [
     {
       "updatedAt": "2026-04-06T15:54:50.296Z",
@@ -550,9 +550,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-04-06T16:07:19.410Z",
-    "createdAt": "2026-04-06T16:07:19.410Z",
-    "versionId": "a78c107a-daf1-44a6-877e-8378448a17c3",
+    "updatedAt": "2026-04-06T16:09:20.443Z",
+    "createdAt": "2026-04-06T16:09:20.443Z",
+    "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
     "workflowId": "3HDB3jDmfakQr1Yp",
     "nodes": [
       {
@@ -689,7 +689,7 @@
           200
         ],
         "parameters": {
-          "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) { stats.created++; }\n  else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n  } else { stats.updated++; }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: 'sync: ' + parts.join(', '), stats: stats } }];"
+          "jsCode": "function cleanWorkflow(wf) {\n  var cleaned = JSON.parse(JSON.stringify(wf));\n  delete cleaned.createdAt;\n  delete cleaned.updatedAt;\n  delete cleaned.versionId;\n  delete cleaned.triggerCount;\n  delete cleaned.staticData;\n  if (cleaned.meta) delete cleaned.meta.instanceId;\n  return cleaned;\n}\n\nvar staticData = $getWorkflowStaticData('global');\nvar pendingManifest = staticData.pendingManifest || {};\nvar oldManifest = staticData.manifest || {};\nvar fetchedWorkflows = $input.all().map(function(i) { return i.json; });\nvar treeEntries = [];\nvar stats = { created: 0, updated: 0, renamed: 0, deleted: 0 };\nvar details = { created: [], updated: [], renamed: [], deleted: [] };\n\nfor (var k = 0; k < fetchedWorkflows.length; k++) {\n  var wf = fetchedWorkflows[k];\n  if (!wf.id || !wf.nodes) continue;\n  var entry = pendingManifest[wf.id];\n  if (!entry) continue;\n  var oldEntry = oldManifest[wf.id];\n  var cleaned = cleanWorkflow(wf);\n  var content = JSON.stringify(cleaned, null, 2);\n  treeEntries.push({ path: 'workflows/' + entry.filename, mode: '100644', type: 'blob', content: content });\n  if (!oldEntry) {\n    stats.created++;\n    details.created.push(wf.name);\n  } else if (oldEntry.name !== entry.name) {\n    treeEntries.push({ path: 'workflows/' + oldEntry.filename, mode: '100644', type: 'blob', sha: null });\n    stats.renamed++;\n    details.renamed.push(oldEntry.name + ' -> ' + wf.name);\n  } else {\n    stats.updated++;\n    details.updated.push(wf.name);\n  }\n}\n\nvar manifestIds = Object.keys(oldManifest);\nfor (var m = 0; m < manifestIds.length; m++) {\n  var did = manifestIds[m];\n  if (!pendingManifest[did]) {\n    treeEntries.push({ path: 'workflows/' + oldManifest[did].filename, mode: '100644', type: 'blob', sha: null });\n    stats.deleted++;\n    details.deleted.push(oldManifest[did].name);\n  }\n}\n\ntreeEntries.push({ path: 'manifest.json', mode: '100644', type: 'blob', content: JSON.stringify(pendingManifest, null, 2) });\n\n// Build commit title\nvar parts = [];\nif (stats.created > 0) parts.push('+' + stats.created + ' new');\nif (stats.updated > 0) parts.push('~' + stats.updated + ' updated');\nif (stats.renamed > 0) parts.push('>' + stats.renamed + ' renamed');\nif (stats.deleted > 0) parts.push('-' + stats.deleted + ' deleted');\nvar title = 'sync: ' + parts.join(', ');\n\n// Build commit body with details\nvar body = '';\nif (details.created.length > 0) body += '\\nCreated:\\n' + details.created.map(function(n) { return '  + ' + n; }).join('\\n');\nif (details.updated.length > 0) body += '\\nUpdated:\\n' + details.updated.map(function(n) { return '  ~ ' + n; }).join('\\n');\nif (details.renamed.length > 0) body += '\\nRenamed:\\n' + details.renamed.map(function(n) { return '  > ' + n; }).join('\\n');\nif (details.deleted.length > 0) body += '\\nDeleted:\\n' + details.deleted.map(function(n) { return '  - ' + n; }).join('\\n');\n\nvar commitMessage = title + '\\n' + body;\n\nreturn [{ json: { treeEntries: treeEntries, commitMessage: commitMessage, stats: stats } }];"
         }
       },
       {
@@ -1073,18 +1073,18 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-04-06T16:07:19.432Z",
-        "id": 83,
+        "createdAt": "2026-04-06T16:09:20.473Z",
+        "id": 85,
         "workflowId": "3HDB3jDmfakQr1Yp",
-        "versionId": "a78c107a-daf1-44a6-877e-8378448a17c3",
+        "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
         "event": "deactivated",
         "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
       },
       {
-        "createdAt": "2026-04-06T16:07:19.444Z",
-        "id": 84,
+        "createdAt": "2026-04-06T16:09:20.495Z",
+        "id": 86,
         "workflowId": "3HDB3jDmfakQr1Yp",
-        "versionId": "a78c107a-daf1-44a6-877e-8378448a17c3",
+        "versionId": "3d83bf19-8ab3-4071-8e5b-bb9ae3149abe",
         "event": "activated",
         "userId": "6260312a-89a7-4e0e-874c-23c8648191b2"
       }
